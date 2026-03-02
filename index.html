@@ -1,0 +1,1348 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>指文字データ収集 統一版（全クラス時系列）</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body{font-family:system-ui,Segoe UI,Meiryo,sans-serif;margin:12px;background:#f5f5f5;}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;}
+    .panel{border:1px solid #ddd;border-radius:10px;padding:16px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);}
+    video,canvas{width:480px;max-width:100%;border-radius:10px;background:#000;border:1px solid #ccc;}
+    label{display:inline-block;margin-right:10px;font-size:14px;}
+    input,select,button{margin:4px 6px 4px 0;padding:8px 12px;font-size:14px;border-radius:6px;border:1px solid #ccc;}
+    button{background:#fff;cursor:pointer;transition:all 0.2s;}
+    button:hover{background:#f0f0f0;}
+    button:active{transform:translateY(1px);}
+    button:disabled{opacity:0.5;cursor:not-allowed;}
+    .mono{font-family:ui-monospace,Consolas,monospace;white-space:pre-wrap;font-size:12px;}
+    .ok{color:#0a7;}
+    .ng{color:#c33;}
+    .small{font-size:12px;color:#666;}
+    .badge{display:inline-block;padding:4px 12px;border-radius:999px;background:#e3f2fd;border:1px solid #2196f3;margin:4px 0;font-weight:600;color:#1976d2;}
+    .info-box{background:#fff3cd;border:1px solid #ffc107;padding:12px;border-radius:8px;margin:12px 0;}
+    :root{ --recOverlay: rgba(0,255,128,0.15); }
+    h2{margin-top:0;}
+    .btn-primary{background:#2196f3;color:#fff;border:1px solid #1976d2;}
+    .btn-primary:hover{background:#1976d2;}
+    .btn-danger{background:#f44336;color:#fff;border:1px solid #d32f2f;}
+    .btn-danger:hover{background:#d32f2f;}
+    .btn-success{background:#4caf50;color:#fff;border:1px solid #388e3c;}
+    .btn-success:hover{background:#388e3c;}
+
+    /* ── 静止型プログレス（リズムパネルと同一デザイン） ── */
+    .static-panel {
+      margin-top: 10px;
+      padding: 14px 16px;
+      border: 2px solid #2196f3;
+      border-radius: 10px;
+      background: #e3f2fd;
+      display: none;
+    }
+    .static-panel h4 { margin: 0 0 10px; color: #1565c0; font-size: 15px; }
+    #staticGoalBanner {
+      display: none;
+      margin-top: 10px;
+      padding: 10px 14px;
+      background: linear-gradient(135deg, #ffd700, #ff9800);
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 800;
+      color: #5d2e00;
+      text-align: center;
+      animation: bannerPop 0.4s cubic-bezier(0.22,1,0.36,1) forwards;
+    }
+
+    /* ── リズムモード UI ── */
+    .rhythm-panel {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border: 2px solid #9c27b0;
+      border-radius: 10px;
+      background: #f3e5f5;
+      display: none;           /* 非静止型選択時のみ表示 */
+    }
+    .rhythm-panel h4 { margin: 0 0 10px; color: #6a1b9a; font-size: 15px; }
+
+    /* ビート表示エリア */
+    .beat-display {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 12px;
+    }
+
+    /* 円形プログレスリング */
+    .beat-ring-wrap {
+      position: relative;
+      width: 80px;
+      height: 80px;
+      flex-shrink: 0;
+    }
+    .beat-ring-wrap svg {
+      position: absolute;
+      top: 0; left: 0;
+      transform: rotate(-90deg);
+    }
+    #beatRingBg { stroke: #e1bee7; }
+    #beatRingFg {
+      stroke: #9c27b0;
+      stroke-linecap: round;
+      transition: stroke 0.05s;
+    }
+    .beat-ring-label {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 900;
+      color: #6a1b9a;
+      pointer-events: none;
+    }
+
+    /* ビート履歴ドット */
+    .beat-dots {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .beat-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #e1bee7;
+      transition: background 0.2s, transform 0.15s;
+      flex-shrink: 0;
+    }
+    .beat-dot.fired   { background: #7b1fa2; }
+    .beat-dot.active  { background: #4caf50; transform: scale(1.5); }
+    .beat-dot.mile25  { background: #ff9800; }   /* 25本目（節目） */
+    .beat-dot.mile50  { background: #f44336; }   /* 50本目 */
+    .beat-dot.mile75  { background: #e91e63; }   /* 75本目 */
+    .beat-dot.mile100 { background: #9c27b0; }   /* 100本目 */
+    .beat-dot.mile125 { background: #3f51b5; }   /* 125本目 */
+    .beat-dot.mile150 { background: #ffd700; border: 2px solid #ff8f00; } /* 150本目 */
+
+    /* マイルストーン区切り線 */
+    .dot-divider {
+      width: 2px; height: 14px;
+      background: rgba(156,39,176,0.35);
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    /* 達成バナー */
+    #rhythmGoalBanner {
+      display: none;
+      margin-top: 10px;
+      padding: 10px 14px;
+      background: linear-gradient(135deg, #ffd700, #ff9800);
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 800;
+      color: #5d2e00;
+      text-align: center;
+      animation: bannerPop 0.4s cubic-bezier(0.22,1,0.36,1) forwards;
+    }
+    @keyframes bannerPop {
+      0%  { transform: scale(0.8); opacity: 0; }
+      100%{ transform: scale(1);   opacity: 1; }
+    }
+
+    /* 節目フラッシュ（ちょっと派手に） */
+    #rhythmMileFlash {
+      position: absolute;
+      inset: 0;
+      border-radius: 10px;
+      pointer-events: none;
+      opacity: 0;
+      background: rgba(255, 152, 0, 0.35);
+      transition: opacity 0.06s;
+    }
+
+    /* キャンバス上のリズムオーバーレイ（フラッシュ） */
+    #rhythmFlash {
+      position: absolute;
+      inset: 0;
+      border-radius: 10px;
+      pointer-events: none;
+      opacity: 0;
+      background: rgba(156, 39, 176, 0.25);
+      transition: opacity 0.08s;
+    }
+    .canvas-wrap { position: relative; display: inline-block; }
+  </style>
+</head>
+
+<body>
+  <h2>🖐️ 指文字データ収集 統一版（全80クラス時系列）</h2>
+  
+  <div class="info-box">
+    <strong>📌 収集方式：</strong>すべてのクラスを <strong>15フレーム固定の時系列データ</strong> として収集します。<br>
+    <strong>静止型</strong>（あ、い、う...）: ポーズが安定したら自動的に0.5秒録画<br>
+    <strong>非静止型</strong>（の、り、が...）: ボタンを押して0.5秒録画
+  </div>
+
+  <div class="row">
+    <div class="panel" style="min-width:400px;max-width:650px;">
+      <h3>⚙️ 設定</h3>
+      
+      <div style="margin:12px 0;">
+        <label><strong>ラベル選択：</strong></label>
+        <select id="label" style="width:200px;">
+          <optgroup label="🟦 静止型（あ行）">
+            <option value="a">あ (a)</option>
+            <option value="i">い (i)</option>
+            <option value="u">う (u)</option>
+            <option value="e">え (e)</option>
+            <option value="o">お (o)</option>
+          </optgroup>
+          <optgroup label="🟦 静止型（か行）">
+            <option value="ka">か (ka)</option>
+            <option value="ki">き (ki)</option>
+            <option value="ku">く (ku)</option>
+            <option value="ke">け (ke)</option>
+            <option value="ko">こ (ko)</option>
+          </optgroup>
+          <optgroup label="🟦 静止型（さ行）">
+            <option value="sa">さ (sa)</option>
+            <option value="shi">し (shi)</option>
+            <option value="su">す (su)</option>
+            <option value="se">せ (se)</option>
+            <option value="so">そ (so)</option>
+          </optgroup>
+          <optgroup label="🟦 静止型（た行）">
+            <option value="ta">た (ta)</option>
+            <option value="chi">ち (chi)</option>
+            <option value="tsu">つ (tsu)</option>
+            <option value="te">て (te)</option>
+            <option value="to">と (to)</option>
+          </optgroup>
+          <optgroup label="🟦 静止型（な行）">
+            <option value="na">な (na)</option>
+            <option value="ni">に (ni)</option>
+            <option value="nu">ぬ (nu)</option>
+            <option value="ne">ね (ne)</option>
+          </optgroup>
+          <optgroup label="🟦 静止型（は行）">
+            <option value="ha">は (ha)</option>
+            <option value="hi">ひ (hi)</option>
+            <option value="fu">ふ (fu)</option>
+            <option value="he">へ (he)</option>
+            <option value="ho">ほ (ho)</option>
+          </optgroup>
+          <optgroup label="🟦 静止型（ま行）">
+            <option value="ma">ま (ma)</option>
+            <option value="mi">み (mi)</option>
+            <option value="mu">む (mu)</option>
+            <option value="me">め (me)</option>
+            <option value="mo">も (mo)</option>
+          </optgroup>
+          <optgroup label="🟦 静止型（や行）">
+            <option value="ya">や (ya)</option>
+            <option value="yu">ゆ (yu)</option>
+            <option value="yo">よ (yo)</option>
+          </optgroup>
+          <optgroup label="🟦 静止型（ら行）">
+            <option value="ra">ら (ra)</option>
+            <option value="re">れ (re)</option>
+            <option value="ro">ろ (ro)</option>
+            <option value="ru">る (ru)</option>
+          </optgroup>
+          <optgroup label="🟦 静止型（わ行）">
+            <option value="wa">わ (wa)</option>
+          </optgroup>
+          <optgroup label="🟦 静止型（特殊型）">
+            <option value="X">X (x)</option>
+          </optgroup>
+          <optgroup label="🟩 非静止型（動き）">
+            <option value="no">の (no)</option>
+            <option value="ri">り (ri)</option>
+            <option value="wo">を (wo)</option>
+            <option value="n">ん (n)</option>
+            <option value="bar">ー (bar)</option>
+          </optgroup>
+          <optgroup label="🟩 非静止型（濁音：が行）">
+            <option value="ga">が (ga)</option>
+            <option value="gi">ぎ (gi)</option>
+            <option value="gu">ぐ (gu)</option>
+            <option value="ge">げ (ge)</option>
+            <option value="go">ご (go)</option>
+          </optgroup>
+          <optgroup label="🟩 非静止型（濁音：ざ行）">
+            <option value="za">ざ (za)</option>
+            <option value="ji">じ (ji)</option>
+            <option value="zu">ず (zu)</option>
+            <option value="ze">ぜ (ze)</option>
+            <option value="zo">ぞ (zo)</option>
+          </optgroup>
+          <optgroup label="🟩 非静止型（濁音：だ行）">
+            <option value="da">だ (da)</option>
+            <option value="di">ぢ (di)</option>
+            <option value="du">づ (du)</option>
+            <option value="de">で (de)</option>
+            <option value="do">ど (do)</option>
+          </optgroup>
+          <optgroup label="🟩 非静止型（濁音：ば行）">
+            <option value="ba">ば (ba)</option>
+            <option value="bi">び (bi)</option>
+            <option value="bu">ぶ (bu)</option>
+            <option value="be">べ (be)</option>
+            <option value="bo">ぼ (bo)</option>
+          </optgroup>
+          <optgroup label="🟩 非静止型（半濁音：ぱ行）">
+            <option value="pa">ぱ (pa)</option>
+            <option value="pi">ぴ (pi)</option>
+            <option value="pu">ぷ (pu)</option>
+            <option value="pe">ぺ (pe)</option>
+            <option value="po">ぽ (po)</option>
+          </optgroup>
+          <optgroup label="🟩 非静止型（拗音・促音）">
+            <option value="xya">ゃ (xya)</option>
+            <option value="xyu">ゅ (xyu)</option>
+            <option value="xyo">ょ (xyo)</option>
+            <option value="xtsu">っ (xtsu)</option>
+            <option value="xa">ぁ (xa)</option>
+            <option value="xi">ぃ (xi)</option>
+            <option value="xu">ぅ (xu)</option>
+            <option value="xe">ぇ (xe)</option>
+            <option value="xo">ぉ (xo)</option>
+          </optgroup>
+        </select>
+        <span class="badge" id="labelType">静止型</span>
+      </div>
+
+      <div style="margin:12px 0;">
+        <label>表示ミラー：</label>
+        <select id="mirrorView">
+          <option value="on" selected>ON（自撮りモード）</option>
+          <option value="off">OFF</option>
+        </select>
+
+        <label>特徴量もミラー：</label>
+        <select id="mirrorForModel">
+          <option value="on" selected>ON</option>
+          <option value="off">OFF</option>
+        </select>
+
+        <label>右手のみ：</label>
+        <select id="rightOnly">
+          <option value="on" selected>ON</option>
+          <option value="off">OFF</option>
+        </select>
+      </div>
+
+      <div style="margin:12px 0;">
+        <label>手検出閾値：</label>
+        <input id="handTh" type="number" step="0.01" value="0.80" min="0" max="1" style="width:80px;"/>
+
+        <label>録画時間(ms)：</label>
+        <input id="recordMs" type="number" value="500" min="300" max="1000" style="width:80px;"/>
+
+        <label>クールダウン(ms)：</label>
+        <input id="cooldown" type="number" value="300" min="100" max="2000" style="width:80px;"/>
+      </div>
+
+      <div style="margin:12px 0;">
+        <label>静止型：安定フレーム数：</label>
+        <input id="stableFrames" type="number" value="15" min="5" max="30" style="width:80px;"/>
+        <span class="small">（このフレーム数安定したら自動録画）</span>
+      </div>
+
+      <div style="margin:12px 0;">
+        <label>目標収集件数：</label>
+        <input id="goalCount" type="number" value="150" min="10" max="1000" step="10" style="width:90px;"/>
+        <span class="small">（達成時に自動ダウンロード）</span>
+      </div>
+
+      <div style="margin:16px 0;">
+        <button id="btnStart" class="btn-primary">▶️ カメラ開始</button>
+        <button id="btnStop" class="btn-danger" disabled>⏹️ 停止</button>
+        <button id="btnArm" class="btn-success" disabled>🎯 収集ON</button>
+      </div>
+
+      <!-- リズムモードパネル（非静止型時のみ表示） -->
+      <div class="rhythm-panel" id="rhythmPanel">
+        <h4>🎵 リズムモード（非静止型専用）</h4>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <label>ビート間隔(ms)：</label>
+          <input id="rhythmInterval" type="number" value="1500" min="800" max="4000" step="100" style="width:90px;"/>
+          <button id="btnRhythm" class="btn-success" disabled>🎵 リズム開始</button>
+          <span class="small" style="color:#6a1b9a;">収集ON中に手を準備してスタート</span>
+        </div>
+
+        <div class="beat-display" id="beatDisplay" style="display:none;">
+          <!-- 円形リング -->
+          <div class="beat-ring-wrap">
+            <svg width="80" height="80" viewBox="0 0 80 80">
+              <circle id="beatRingBg" cx="40" cy="40" r="34" fill="none" stroke-width="7"/>
+              <circle id="beatRingFg" cx="40" cy="40" r="34" fill="none" stroke-width="7"
+                      stroke-dasharray="213.6" stroke-dashoffset="213.6"/>
+            </svg>
+            <div class="beat-ring-label" id="beatRingLabel">●</div>
+          </div>
+
+          <!-- ビート履歴ドット -->
+          <div>
+            <div style="font-size:12px;color:#6a1b9a;margin-bottom:6px;font-weight:600;">収集数</div>
+            <div class="beat-dots" id="beatDots" style="flex-wrap:wrap;max-width:280px;gap:4px;"></div>
+            <div id="rhythmGoalBanner">🎉 目標達成！おつかれさまでした！</div>
+
+          </div>
+        </div>
+      </div>
+
+      <div style="margin:16px 0;">
+        <button id="btnDownload" disabled>💾 JSONLダウンロード</button>
+        <button id="btnClear" disabled>🗑️ データクリア</button>
+      </div>
+
+      <div class="mono" id="status" style="padding:8px;background:#f5f5f5;border-radius:6px;margin:8px 0;min-height:2.8em;white-space:pre;">Status: idle</div>
+      <div class="mono" id="counter" style="padding:8px;background:#e8f5e9;border-radius:6px;">Samples: 0</div>
+
+      <!-- 静止型プログレス（静止型選択時のみ表示） -->
+      <div class="static-panel" id="staticProgress">
+        <h4>📊 収集進捗（静止型）</h4>
+
+        <div class="beat-display" id="staticBeatDisplay">
+          <!-- 円形リング -->
+          <div class="beat-ring-wrap">
+            <svg width="80" height="80" viewBox="0 0 80 80">
+              <circle id="staticRingBg" cx="40" cy="40" r="34" fill="none" stroke-width="7" stroke="#bbdefb"/>
+              <circle id="staticRingFg" cx="40" cy="40" r="34" fill="none" stroke-width="7"
+                      stroke="#2196f3" stroke-dasharray="213.6" stroke-dashoffset="213.6"
+                      stroke-linecap="round" style="transform:rotate(-90deg);transform-origin:center;transition:stroke 0.2s;"/>
+            </svg>
+            <div class="beat-ring-label" id="staticRingLabel" style="color:#1565c0;">0%</div>
+          </div>
+
+          <!-- ドット -->
+          <div>
+            <div style="font-size:12px;color:#1565c0;margin-bottom:6px;font-weight:600;">収集数</div>
+            <div class="beat-dots" id="staticDots" style="flex-wrap:wrap;max-width:280px;gap:4px;"></div>
+            <div id="staticGoalBanner">🎉 目標達成！自動ダウンロード中...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="small mono" id="lastSaved" style="margin:8px 0;">Last: -</div>
+    </div>
+
+    <div class="panel">
+      <h3>📹 プレビュー</h3>
+      <video id="video" playsinline autoplay muted></video>
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+        <div id="rhythmFlash"></div>
+        <div id="rhythmMileFlash"></div>
+      </div>
+      <div class="small mono" style="margin-top:8px;" id="debugInfo">Debug: -</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs";
+    const { HandLandmarker, FilesetResolver, DrawingUtils } = vision;
+
+    const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+    const WASM_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm";
+
+    // 静止型と非静止型の分類
+    // ラベルごとのダウンロードファイル名
+    const LABEL_FILENAME = {
+      'a':    '01_notmove_a',
+      'i':    '02_notmove_i',
+      'u':    '03_notmove_u',
+      'e':    '04_notmove_e',
+      'o':    '05_notmove_o',
+      'ka':   '06_notmove_ka',
+      'ki':   '07_notmove_ki',
+      'ku':   '08_notmove_ku',
+      'ke':   '09_notmove_ke',
+      'ko':   '10_notmove_ko',
+      'sa':   '11_notmove_sa',
+      'shi':  '12_notmove_shi',
+      'su':   '13_notmove_su',
+      'se':   '14_notmove_se',
+      'so':   '15_notmove_so',
+      'ta':   '16_notmove_ta',
+      'chi':  '17_notmove_chi',
+      'tsu':  '18_notmove_tsu',
+      'te':   '19_notmove_te',
+      'to':   '20_notmove_to',
+      'na':   '21_notmove_na',
+      'ni':   '22_notmove_ni',
+      'nu':   '23_notmove_nu',
+      'ne':   '24_notmove_ne',
+      'no':   '25_move_no',
+      'ha':   '26_notmove_ha',
+      'hi':   '27_notmove_hi',
+      'fu':   '28_notmove_fu',
+      'he':   '29_notmove_he',
+      'ho':   '30_notmove_ho',
+      'ma':   '31_notmove_ma',
+      'mi':   '32_notmove_mi',
+      'mu':   '33_notmove_mu',
+      'me':   '34_notmove_me',
+      'mo':   '35_notmove_mo',
+      'ya':   '36_notmove_ya',
+      'yu':   '37_notmove_yu',
+      'yo':   '38_notmove_yo',
+      'ra':   '39_notmove_ra',
+      'ri':   '40_move_ri',
+      'ru':   '41_notmove_ru',
+      're':   '42_notmove_re',
+      'ro':   '43_notmove_ro',
+      'wa':   '44_notmove_wa',
+      'wo':   '45_move_wo',
+      'n':    '46_move_n',
+      'bar':  '47_move_bar',
+      'ga':   '48_move_ga',
+      'gi':   '49_move_gi',
+      'gu':   '50_move_gu',
+      'ge':   '51_move_ge',
+      'go':   '52_move_go',
+      'za':   '53_move_za',
+      'ji':   '54_move_ji',
+      'zu':   '55_move_zu',
+      'ze':   '56_move_ze',
+      'zo':   '57_move_zo',
+      'da':   '58_move_da',
+      'di':   '59_move_di',
+      'du':   '60_move_du',
+      'de':   '61_move_de',
+      'do':   '62_move_do',
+      'ba':   '63_move_ba',
+      'bi':   '64_move_bi',
+      'bu':   '65_move_bu',
+      'be':   '66_move_be',
+      'bo':   '67_move_bo',
+      'pa':   '68_move_pa',
+      'pi':   '69_move_pi',
+      'pu':   '70_move_pu',
+      'pe':   '71_move_pe',
+      'po':   '72_move_po',
+      'xya':  '73_move_xya',
+      'xyu':  '74_move_xyu',
+      'xyo':  '75_move_xyo',
+      'xtsu': '76_move_xtsu',
+      'xa':   '77_move_xa',
+      'xi':   '78_move_xi',
+      'xu':   '79_move_xu',
+      'xe':   '80_move_xe',
+    };
+
+    const STATIC_LABELS = new Set([
+      'a','i','u','e','o',
+      'ka','ki','ku','ke','ko',
+      'sa','shi','su','se','so',
+      'ta','chi','tsu','te','to',
+      'na','ni','nu','ne',
+      'ha','hi','fu','he','ho',
+      'ma','mi','mu','me','mo',
+      'ya','yu','yo',
+      'ra','re','ro','ru',
+      'wa','X'
+    ]);
+
+    const els = {
+      label: document.getElementById("label"),
+      labelType: document.getElementById("labelType"),
+      mirrorView: document.getElementById("mirrorView"),
+      mirrorForModel: document.getElementById("mirrorForModel"),
+      rightOnly: document.getElementById("rightOnly"),
+      handTh: document.getElementById("handTh"),
+      recordMs: document.getElementById("recordMs"),
+      cooldown: document.getElementById("cooldown"),
+      stableFrames: document.getElementById("stableFrames"),
+      btnStart: document.getElementById("btnStart"),
+      btnStop: document.getElementById("btnStop"),
+      btnArm: document.getElementById("btnArm"),
+      btnDownload: document.getElementById("btnDownload"),
+      btnClear: document.getElementById("btnClear"),
+      status: document.getElementById("status"),
+      counter: document.getElementById("counter"),
+      lastSaved: document.getElementById("lastSaved"),
+      video: document.getElementById("video"),
+      canvas: document.getElementById("canvas"),
+      debugInfo: document.getElementById("debugInfo")
+    };
+
+    let landmarker = null;
+    let stream = null;
+    let rafId = null;
+    let armed = false;
+
+    let samples = [];
+    let lastSavedAt = 0;
+    let lastHanded = null;
+
+    // 録画用バッファ
+    let isRecording = false;
+    let recordStartAt = 0;
+    let recordFrames = [];
+    let targetFps = 30;  // 固定
+
+    // 静止型用の安定検出
+    let stableBuffer = [];  // 最近のlandmarksを保存
+    let stableCount = 0;
+
+    // 静止型カウント（現セッション）
+    function getGoal() {
+      return parseInt(document.getElementById('goalCount')?.value) || 150;
+    }
+
+    // リズムモード
+    let rhythmActive = false;
+    let rhythmNextBeat = 0;
+    let rhythmTotalTarget = 0;
+    let rhythmFired = 0;
+    const RING_CIRC = 213.6; // 2πr (r=34)
+
+    // ラベル変更時の処理
+    els.label.addEventListener('change', () => {
+      const label = els.label.value;
+      const isStatic = STATIC_LABELS.has(label);
+      els.labelType.textContent = isStatic ? '静止型' : '非静止型';
+      els.labelType.style.background = isStatic ? '#e3f2fd' : '#e8f5e9';
+      els.labelType.style.borderColor = isStatic ? '#2196f3' : '#4caf50';
+      
+      // 非静止型の場合は手動録画ボタンを表示
+      document.getElementById('rhythmPanel').style.display = isStatic ? 'none' : 'block';
+      document.getElementById('staticProgress').style.display = isStatic ? 'block' : 'none';
+      if (isStatic) updateStaticDots();
+      if (isStatic && rhythmActive) stopRhythm();
+      setCounter(); // バー表示を更新
+    });
+
+    function setStatus(msg, cls = "") {
+      els.status.textContent = msg;
+      els.status.className = "mono " + cls;
+    }
+
+    function setCounter() {
+      const n = samples.length;
+      els.counter.textContent = `Samples: ${n}`;
+      els.btnDownload.disabled = n === 0;
+      els.btnClear.disabled = n === 0;
+
+      // 静止型プログレス更新
+      const label2 = els.label.value;
+      if (STATIC_LABELS.has(label2)) updateStaticDots();
+    }
+
+    function saveJSONLLine(obj) {
+      samples.push(obj);
+      setCounter();
+    }
+
+    function downloadJSONL(data, labelOverride) {
+      const src = data || samples;
+      const lbl = labelOverride || els.label.value;
+      if (src.length === 0) return;
+
+      const lines = src.map(s => JSON.stringify(s)).join("\n");
+      const blob = new Blob([lines], { type: "application/x-jsonlines" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const now = new Date();
+      const ts = now.toISOString().slice(0, 19).replace(/[:-]/g, "").replace("T", "_");
+      const baseName = LABEL_FILENAME[lbl] || `label_${lbl}`;
+      a.href = url;
+      a.download = `${baseName}_${ts}.jsonl`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function initLandmarker() {
+      setStatus("Initializing MediaPipe...");
+      const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
+      landmarker = await HandLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: MODEL_URL },
+        runningMode: "VIDEO",
+        numHands: 2
+      });
+      setStatus("MediaPipe ready");
+    }
+
+    async function startCamera() {
+      setStatus("Requesting camera...");
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: 640, height: 480 },
+        audio: false
+      });
+      els.video.srcObject = stream;
+      await new Promise(resolve => {
+        els.video.onloadedmetadata = resolve;
+      });
+      await els.video.play();
+      
+      const w = els.video.videoWidth || 640;
+      const h = els.video.videoHeight || 480;
+      els.canvas.width = w;
+      els.canvas.height = h;
+      
+      setStatus("Camera ready");
+    }
+
+    function stopAll() {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+      
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+      stream = null;
+      els.video.srcObject = null;
+      
+      if (landmarker) {
+        landmarker.close();
+        landmarker = null;
+      }
+      
+      armed = false;
+      isRecording = false;
+      recordFrames = [];
+      stableBuffer = [];
+      stableCount = 0;
+    }
+
+    function toFeature63(landmarks) {
+      // wrist基準の正規化（既存と同じ）
+      const mirror = els.mirrorForModel.value === "on";
+      const wrist = landmarks[0];
+      
+      const pts = landmarks.map(p => ({
+        x: (mirror ? (1.0 - p.x) : p.x) - (mirror ? (1.0 - wrist.x) : wrist.x),
+        y: p.y - wrist.y,
+        z: p.z - wrist.z
+      }));
+      
+      let maxd = 0;
+      for (const p of pts) {
+        const d = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (d > maxd) maxd = d;
+      }
+      
+      const s = (maxd > 1e-9) ? (1.0 / maxd) : 1.0;
+      const vec = [];
+      for (const p of pts) {
+        vec.push(p.x * s, p.y * s, p.z * s);
+      }
+      
+      return vec;
+    }
+
+    function draw(video, res) {
+      const ctx = els.canvas.getContext("2d");
+      const w = els.canvas.width;
+      const h = els.canvas.height;
+      
+      ctx.save();
+      
+      if (els.mirrorView.value === "on") {
+        ctx.translate(w, 0);
+        ctx.scale(-1, 1);
+      }
+      
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(video, 0, 0, w, h);
+      
+      if (res?.landmarks?.length > 0) {
+        const drawingUtils = new DrawingUtils(ctx);
+        for (const landmarks of res.landmarks) {
+          drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
+            color: "#00FF00",
+            lineWidth: 2
+          });
+          drawingUtils.drawLandmarks(landmarks, {
+            color: "#FF0000",
+            lineWidth: 1,
+            radius: 3
+          });
+        }
+      }
+      
+      ctx.restore();
+      
+      // 録画中のオーバーレイ
+      if (isRecording) {
+        ctx.fillStyle = "rgba(0, 255, 128, 0.15)";
+        ctx.fillRect(0, 0, w, h);
+      }
+    }
+
+    function handConfidence(res) {
+      if (!res?.handednesses?.length) return 0;
+      return res.handednesses[0]?.[0]?.score ?? 0;
+    }
+
+    function pickHand(res) {
+      if (!res?.landmarks?.length) return null;
+      
+      let idx = 0;
+      if (els.rightOnly.value === "on" && res.handednesses?.length) {
+        const iRight = res.handednesses.findIndex(h => h?.[0]?.categoryName === "Right");
+        if (iRight >= 0) idx = iRight;
+        else return null;
+      }
+      
+      return {
+        landmarks: res.landmarks[idx],
+        handed: res.handednesses?.[idx]?.[0]?.categoryName ?? "?"
+      };
+    }
+
+    function startRecording(tsNow) {
+      isRecording = true;
+      recordStartAt = tsNow;
+      recordFrames = [];
+      setStatus("🔴 Recording...", "ng");
+    }
+
+    function finishRecording(label) {
+      if (recordFrames.length === 0) {
+        setStatus("⚠️ No frames recorded", "ng");
+        isRecording = false;
+        return;
+      }
+      
+      // 15フレームにリサンプリング
+      const frames15 = resampleTo15(recordFrames);
+      
+      const obj = {
+        label: label,
+        tsMs: Date.now(),
+        handedness: lastHanded,
+        frames: frames15
+      };
+      
+      saveJSONLLine(obj);
+      els.lastSaved.textContent = `Last: ${label} (${frames15.length} frames, hand=${lastHanded})`;
+      setStatus(`✅ Saved! label=${label} frames=${frames15.length}`, "ok");
+
+      isRecording = false;
+      recordFrames = [];
+      lastSavedAt = performance.now();
+
+      // ── 150回達成チェック（静止型） ──
+      const isStatic = STATIC_LABELS.has(label);
+      if (isStatic) {
+        const n = samples.length;
+        updateStaticDots();
+
+        // マイルストーン演出（fireMilestone共用）
+        if (getMilestones().includes(n)) {
+          fireStaticMilestone(n, label);
+        }
+      }
+    }
+
+    function resampleTo15(frames) {
+      const n = frames.length;
+      const target = 15;
+      
+      if (n === target) return frames;
+      if (n < target) {
+        // パディング
+        const result = [...frames];
+        while (result.length < target) {
+          result.push(frames[frames.length - 1]);
+        }
+        return result;
+      }
+      
+      // 線形補間
+      const indices = [];
+      for (let i = 0; i < target; i++) {
+        indices.push(i * (n - 1) / (target - 1));
+      }
+      
+      return indices.map(idx => {
+        const i0 = Math.floor(idx);
+        const i1 = Math.min(i0 + 1, n - 1);
+        const alpha = idx - i0;
+        
+        return frames[i0].map((v, j) => v * (1 - alpha) + frames[i1][j] * alpha);
+      });
+    }
+
+    function isStable(landmarks) {
+      // 最新のlandmarksと過去のlandmarksを比較
+      if (stableBuffer.length === 0) return false;
+      
+      const prev = stableBuffer[stableBuffer.length - 1];
+      let sumDist = 0;
+      
+      for (let i = 0; i < 21; i++) {
+        const dx = landmarks[i].x - prev[i].x;
+        const dy = landmarks[i].y - prev[i].y;
+        const dz = landmarks[i].z - prev[i].z;
+        sumDist += Math.sqrt(dx * dx + dy * dy + dz * dz);
+      }
+      
+      const avgDist = sumDist / 21;
+      return avgDist < 0.02;  // 閾値（調整可能）
+    }
+
+    function loop() {
+      const tsNow = performance.now();
+      const res = landmarker.detectForVideo(els.video, tsNow);
+      draw(els.video, res);
+      
+      const conf = handConfidence(res);
+      const hasHand = conf >= Number(els.handTh.value);
+      const pick = hasHand ? pickHand(res) : null;
+      
+      const label = els.label.value;
+      const isStatic = STATIC_LABELS.has(label);
+      const cd = Number(els.cooldown.value);
+      const cdOk = (tsNow - lastSavedAt) >= cd;
+      
+      // Debug info
+      els.debugInfo.textContent = `Hand: ${hasHand ? 'YES' : 'NO'} (conf=${conf.toFixed(2)}) | Buffer: ${recordFrames.length} | Stable: ${stableCount}`;
+      
+      if (!armed) {
+        setStatus("Status: Preview (armed=OFF)", "");
+        rafId = requestAnimationFrame(loop);
+        return;
+      }
+      
+      if (!hasHand || !pick) {
+        stableBuffer = [];
+        stableCount = 0;
+        
+        if (isRecording) {
+          isRecording = false;
+          recordFrames = [];
+          setStatus("⚠️ Recording aborted (no hand)", "ng");
+        } else {
+          setStatus(`Armed=ON | NO HAND (conf=${conf.toFixed(2)})`, "ng");
+        }
+        
+        rafId = requestAnimationFrame(loop);
+        return;
+      }
+      
+      lastHanded = pick.handed;
+      const features = toFeature63(pick.landmarks);
+      
+      // === 静止型の処理 ===
+      if (isStatic) {
+        stableBuffer.push(pick.landmarks);
+        if (stableBuffer.length > 30) stableBuffer.shift();
+        
+        if (isStable(pick.landmarks)) {
+          stableCount++;
+        } else {
+          stableCount = 0;
+        }
+        
+        const requiredStable = Number(els.stableFrames.value);
+        const remain = Math.max(0, requiredStable - stableCount);
+        
+        setStatus(
+          `Armed=ON | Static | label=${label} | conf=${conf.toFixed(2)}\n` +
+          `Stable: ${stableCount}/${requiredStable} (remain ${remain})`,
+          remain === 0 ? "ok" : ""
+        );
+        
+        // 安定したら自動録画開始
+        if (stableCount >= requiredStable && !isRecording && cdOk) {
+          startRecording(tsNow);
+        }
+      }
+      
+      // === リズムモード：非静止型の自動ビートトリガー ===
+      if (rhythmActive && !isStatic && armed && hasHand && !isRecording) {
+        const interval = Number(document.getElementById('rhythmInterval').value);
+        const elapsed = tsNow - rhythmNextBeat + interval;
+        const progress = Math.min(elapsed / interval, 1.0);
+
+        // リング更新
+        const offset = RING_CIRC * (1 - progress);
+        document.getElementById('beatRingFg').setAttribute('stroke-dashoffset', offset.toFixed(1));
+
+        // カウントダウン表示
+        const remain = Math.max(0, Math.ceil((rhythmNextBeat - tsNow) / 1000 * 10) / 10);
+        if (!rhythmActive || rhythmFired === 0) {
+          document.getElementById('beatRingLabel').textContent =
+            remain <= 0.1 ? '🎵' : remain.toFixed(1);
+        } else {
+          // 進捗%を常時表示、ビート直前だけ🎵に
+          const pct = Math.round(rhythmFired / getGoal() * 100);
+          document.getElementById('beatRingLabel').textContent =
+            remain <= 0.1 ? '🎵' : `${pct}%`;
+        }
+
+        // ビート到達 → 録画開始
+        if (tsNow >= rhythmNextBeat) {
+          // フラッシュ演出
+          const flash = document.getElementById('rhythmFlash');
+          flash.style.opacity = '1';
+          setTimeout(() => { flash.style.opacity = '0'; }, 120);
+
+          // リング色を緑に
+          document.getElementById('beatRingFg').style.stroke = '#4caf50';
+          setTimeout(() => {
+            document.getElementById('beatRingFg').style.stroke = '#9c27b0';
+          }, 300);
+
+          startRecording(tsNow);
+          rhythmNextBeat = tsNow + interval;
+
+          // ドット更新
+          rhythmFired++;
+          updateRhythmDots();
+
+          // マイルストーンチェック
+          if (getMilestones().includes(rhythmFired)) {
+            fireMilestone(rhythmFired);
+          }
+
+          // 目標数に達したら停止（150回固定）
+          if (rhythmFired >= getGoal()) {
+            stopRhythm();
+          }
+        }
+      }
+
+      // === 録画中の処理（静止型・非静止型共通） ===
+      if (isRecording) {
+        const frameInterval = 1000 / targetFps;
+        const elapsed = tsNow - recordStartAt;
+        const recordMs = Number(els.recordMs.value);
+        
+        // フレーム追加
+        if (recordFrames.length === 0 || (elapsed >= recordFrames.length * frameInterval)) {
+          recordFrames.push(features);
+        }
+        
+        setStatus(
+          `🔴 Recording... | label=${label}\n` +
+          `Elapsed: ${Math.round(elapsed)}ms / ${recordMs}ms | Frames: ${recordFrames.length}`,
+          ""
+        );
+        
+        // 録画終了
+        if (elapsed >= recordMs) {
+          finishRecording(label);
+          stableCount = 0;
+          stableBuffer = [];
+        }
+      }
+      
+      rafId = requestAnimationFrame(loop);
+    }
+
+    // === イベントハンドラ ===
+    
+    els.btnStart.onclick = async () => {
+      els.btnStart.disabled = true;
+      try {
+        await initLandmarker();
+        await startCamera();
+        
+        els.btnStop.disabled = false;
+        els.btnArm.disabled = false;
+        
+        armed = false;
+        isRecording = false;
+        recordFrames = [];
+        stableBuffer = [];
+        stableCount = 0;
+        lastSavedAt = 0;
+        
+        els.btnArm.textContent = "🎯 収集ON";
+        setStatus("Preview (armed=OFF)", "");
+        rafId = requestAnimationFrame(loop);
+      } catch (e) {
+        console.error(e);
+        setStatus("ERROR: " + String(e.message || e), "ng");
+        els.btnStart.disabled = false;
+      }
+    };
+
+    els.btnStop.onclick = () => {
+      stopAll();
+      els.btnStart.disabled = false;
+      els.btnStop.disabled = true;
+      els.btnArm.disabled = true;
+      armed = false;
+      els.btnArm.textContent = "🎯 収集ON";
+      setStatus("Stopped", "");
+    };
+
+    // ── リズムモード関数 ────────────────────────────────
+    function startRhythm() {
+      const interval = Number(document.getElementById('rhythmInterval').value);
+      rhythmTotalTarget = Number(document.getElementById('rhythmTargetCount')?.value || 0);
+      rhythmFired = 0;
+      rhythmActive = true;
+      rhythmNextBeat = performance.now() + interval; // 最初のビートは1拍後
+
+      document.getElementById('beatDisplay').style.display = 'flex';
+      document.getElementById('btnRhythm').textContent = '⏹ リズム停止';
+      document.getElementById('btnRhythm').className = 'btn-danger';
+      document.getElementById('beatRingFg').setAttribute('stroke-dashoffset', RING_CIRC.toFixed(1));
+      document.getElementById('rhythmGoalBanner').style.display = 'none';
+      updateRhythmDots();
+      setStatus('🎵 リズムモード開始！ビートに合わせて動かしてください', 'ok');
+    }
+
+    function stopRhythm() {
+      rhythmActive = false;
+      document.getElementById('btnRhythm').textContent = '🎵 リズム開始';
+      document.getElementById('btnRhythm').className = 'btn-success';
+      document.getElementById('beatRingLabel').textContent = '●';
+      document.getElementById('beatRingFg').setAttribute('stroke-dashoffset', RING_CIRC.toFixed(1));
+      setStatus(`リズムモード停止 (収集: ${rhythmFired}件)`, '');
+    }
+
+    // マイルストーン定義
+    function getMilestones() {
+      const g = getGoal();
+      return [
+        Math.round(g * 1/6), Math.round(g * 2/6), Math.round(g * 3/6),
+        Math.round(g * 4/6), Math.round(g * 5/6), g
+      ];
+    }
+
+    // 静止型ドット更新
+    function updateStaticDots() {
+      const GOAL = getGoal();
+      const n = samples.length;
+      const dotsEl = document.getElementById('staticDots');
+      if (!dotsEl) return;
+
+      dotsEl.innerHTML = '';
+      for (let i = 0; i < GOAL; i++) {
+        if (i > 0 && i % 25 === 0) {
+          const div = document.createElement('div');
+          div.className = 'dot-divider';
+          dotsEl.appendChild(div);
+        }
+        const d = document.createElement('div');
+        const isFired  = i < n;
+        const isActive = i === n - 1;
+        const num = i + 1;
+        let cls = 'beat-dot';
+        if (isActive) {
+          cls += getMilestones().includes(num) ? ` mile${num}` : ' active';
+        } else if (isFired) {
+          cls += getMilestones().includes(num) ? ` mile${num}` : ' fired';
+        }
+        d.className = cls;
+        dotsEl.appendChild(d);
+      }
+
+      // リング更新
+      const pct = Math.min(n / GOAL * 100, 100);
+      const offset = 213.6 * (1 - pct / 100);
+      const fg = document.getElementById('staticRingFg');
+      if (fg) {
+        fg.setAttribute('stroke-dashoffset', offset.toFixed(1));
+        fg.style.stroke = n >= GOAL ? '#ffd700' : n >= 100 ? '#9c27b0' : n >= 50 ? '#f44336' : '#2196f3';
+      }
+      const lbl = document.getElementById('staticRingLabel');
+      if (lbl) lbl.textContent = Math.round(pct) + '%';
+    }
+    function getMileMsgs() {
+      const g = getGoal();
+      const ms = getMilestones();
+      const colors = [
+        'rgba(255,152,0,0.35)', 'rgba(244,67,54,0.35)', 'rgba(233,30,99,0.35)',
+        'rgba(103,58,183,0.35)', 'rgba(63,81,181,0.35)', 'rgba(255,215,0,0.5)'
+      ];
+      const labels = [
+        `🔥 ${ms[0]}回！調子いいです！`,
+        `⚡ ${ms[1]}回！折り返し地点！`,
+        `💪 ${ms[2]}回！もうひと踏ん張り！`,
+        `🌟 ${ms[3]}回！ラストスパート！`,
+        `🚀 ${ms[4]}回！あと少し！`,
+        `🎉 ${g}回達成！完璧です！`,
+      ];
+      const result = {};
+      ms.forEach((m, i) => { result[m] = [labels[i], colors[i]]; });
+      return result;
+    }
+
+    function updateRhythmDots() {
+      const GOAL = getGoal();
+      const dotsEl = document.getElementById('beatDots');
+      dotsEl.innerHTML = '';
+
+      for (let i = 0; i < GOAL; i++) {
+        // 25本ごとに区切り線（最初以外）
+        if (i > 0 && i % 25 === 0) {
+          const div = document.createElement('div');
+          div.className = 'dot-divider';
+          dotsEl.appendChild(div);
+        }
+
+        const d = document.createElement('div');
+        const isFired  = i < rhythmFired;
+        const isActive = i === rhythmFired - 1;
+        const n = i + 1; // 1始まり
+
+        let cls = 'beat-dot';
+        if (isActive) {
+          // マイルストーンの節目ドット
+          if (getMilestones().includes(n))
+            cls += ` mile${n}`;
+          else
+            cls += ' active';
+        } else if (isFired) {
+          if (getMilestones().includes(n))
+            cls += ` mile${n}`;
+          else
+            cls += ' fired';
+        }
+        d.className = cls;
+        dotsEl.appendChild(d);
+      }
+
+      // プログレステキスト
+      const pct = Math.round(rhythmFired / GOAL * 100);
+      document.getElementById('beatRingLabel').textContent =
+        rhythmActive ? `${pct}%` : '●';
+      document.getElementById('beatRingFg').style.stroke =
+        rhythmFired >= GOAL ? '#ffd700' :
+        rhythmFired >= 100  ? '#9c27b0' :
+        rhythmFired >= 50   ? '#f44336' : '#9c27b0';
+    }
+
+    function fireStaticMilestone(n, label) {
+      const info = getMileMsgs()[n];
+      if (!info) return;
+      const [msg, color] = info;
+
+      // キャンバスフラッシュ
+      const mf = document.getElementById('rhythmMileFlash');
+      if (mf) {
+        mf.style.background = color;
+        mf.style.opacity = '1';
+        setTimeout(() => { mf.style.opacity = '0'; }, 350);
+      }
+
+      setStatus(msg, 'ok');
+
+      if (n === getGoal()) {
+        const banner = document.getElementById('staticGoalBanner');
+        banner.style.display = 'block';
+        banner.textContent = `🎉 ${getGoal()}回達成！自動ダウンロード中...`;
+        setTimeout(() => {
+          downloadJSONL(samples.slice(), label);
+          samples = [];
+          updateStaticDots();
+          setCounter();
+          banner.style.display = 'none';
+          els.lastSaved.textContent = 'Last: - (自動DL完了・データクリア済み)';
+          disarmAfterComplete();
+          setStatus('✅ 自動ダウンロード完了。次のラベルへどうぞ！', 'ok');
+        }, 600);
+      }
+    }
+
+    function disarmAfterComplete() {
+      armed = false;
+      isRecording = false;
+      recordFrames = [];
+      stableBuffer = [];
+      stableCount = 0;
+      els.btnArm.textContent = '🎯 収集ON';
+      document.getElementById('btnRhythm').disabled = true;
+    }
+
+    function fireMilestone(n) {
+      const info = getMileMsgs()[n];
+      if (!info) return;
+      const [msg, color] = info;
+
+      // キャンバスフラッシュ（色違い）
+      const mf = document.getElementById('rhythmMileFlash');
+      if (mf) {
+        mf.style.background = color;
+        mf.style.opacity = '1';
+        setTimeout(() => { mf.style.opacity = '0'; }, 350);
+      }
+
+      // ステータスバーにメッセージ
+      setStatus(msg, 'ok');
+
+      // 150回達成：バナー表示 → 自動DL → クリア
+      if (n === getGoal()) {
+        document.getElementById('rhythmGoalBanner').style.display = 'block';
+        document.getElementById('rhythmGoalBanner').textContent = `🎉 ${getGoal()}回達成！自動ダウンロード中...`;
+        stopRhythm();
+
+        const label = els.label.value;
+        setTimeout(() => {
+          downloadJSONL(samples.slice(), label);
+          samples = [];
+          rhythmFired = 0;
+          setCounter();
+          updateRhythmDots();
+          document.getElementById('rhythmGoalBanner').style.display = 'none';
+          els.lastSaved.textContent = 'Last: - (自動DL完了・データクリア済み)';
+          disarmAfterComplete();
+          setStatus('✅ 自動ダウンロード完了。次のラベルへどうぞ！', 'ok');
+        }, 600);
+      }
+    }
+
+    document.getElementById('btnRhythm').onclick = () => {
+      if (!armed) {
+        alert('先に「収集ON」をONにしてください。');
+        return;
+      }
+      if (rhythmActive) {
+        stopRhythm();
+      } else {
+        startRhythm();
+      }
+    };
+    // ──────────────────────────────────────────────────────
+
+    els.btnArm.onclick = () => {
+      armed = !armed;
+      isRecording = false;
+      recordFrames = [];
+      stableBuffer = [];
+      stableCount = 0;
+
+      if (!armed && rhythmActive) stopRhythm();
+
+      els.btnArm.textContent = armed ? "⏸️ 収集OFF" : "🎯 収集ON";
+      document.getElementById('btnRhythm').disabled = !armed;
+      setStatus(`Preview (armed=${armed ? "ON" : "OFF"})`, "");
+    };
+
+
+
+    els.btnDownload.onclick = () => downloadJSONL();
+    els.btnClear.onclick = () => {
+      if (confirm("全てのデータをクリアしますか？")) {
+        samples = [];
+        setCounter();
+        els.lastSaved.textContent = "Last: -";
+        setStatus("Data cleared", "");
+      }
+    };
+
+    setCounter();
+
+    // ページ読み込み時：初期ラベルに合わせてパネル表示を初期化
+    (function initPanels() {
+      const label = els.label.value;
+      const isStatic = STATIC_LABELS.has(label);
+      document.getElementById('staticProgress').style.display = isStatic ? 'block' : 'none';
+      document.getElementById('rhythmPanel').style.display   = isStatic ? 'none'  : 'block';
+      if (isStatic) updateStaticDots();
+    })();
+  </script>
+</body>
+</html>
