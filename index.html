@@ -1,1348 +1,863 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>指文字データ収集 統一版（全クラス時系列）</title>
-  <link rel="icon" href="data:,">
-  <style>
-    body{font-family:system-ui,Segoe UI,Meiryo,sans-serif;margin:12px;background:#f5f5f5;}
-    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;}
-    .panel{border:1px solid #ddd;border-radius:10px;padding:16px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);}
-    video,canvas{width:480px;max-width:100%;border-radius:10px;background:#000;border:1px solid #ccc;}
-    label{display:inline-block;margin-right:10px;font-size:14px;}
-    input,select,button{margin:4px 6px 4px 0;padding:8px 12px;font-size:14px;border-radius:6px;border:1px solid #ccc;}
-    button{background:#fff;cursor:pointer;transition:all 0.2s;}
-    button:hover{background:#f0f0f0;}
-    button:active{transform:translateY(1px);}
-    button:disabled{opacity:0.5;cursor:not-allowed;}
-    .mono{font-family:ui-monospace,Consolas,monospace;white-space:pre-wrap;font-size:12px;}
-    .ok{color:#0a7;}
-    .ng{color:#c33;}
-    .small{font-size:12px;color:#666;}
-    .badge{display:inline-block;padding:4px 12px;border-radius:999px;background:#e3f2fd;border:1px solid #2196f3;margin:4px 0;font-weight:600;color:#1976d2;}
-    .info-box{background:#fff3cd;border:1px solid #ffc107;padding:12px;border-radius:8px;margin:12px 0;}
-    :root{ --recOverlay: rgba(0,255,128,0.15); }
-    h2{margin-top:0;}
-    .btn-primary{background:#2196f3;color:#fff;border:1px solid #1976d2;}
-    .btn-primary:hover{background:#1976d2;}
-    .btn-danger{background:#f44336;color:#fff;border:1px solid #d32f2f;}
-    .btn-danger:hover{background:#d32f2f;}
-    .btn-success{background:#4caf50;color:#fff;border:1px solid #388e3c;}
-    .btn-success:hover{background:#388e3c;}
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>指文字 Collector v2</title>
+<link rel="icon" href="data:,">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;height:100vh;overflow:hidden;}
 
-    /* ── 静止型プログレス（リズムパネルと同一デザイン） ── */
-    .static-panel {
-      margin-top: 10px;
-      padding: 14px 16px;
-      border: 2px solid #2196f3;
-      border-radius: 10px;
-      background: #e3f2fd;
-      display: none;
-    }
-    .static-panel h4 { margin: 0 0 10px; color: #1565c0; font-size: 15px; }
-    #staticGoalBanner {
-      display: none;
-      margin-top: 10px;
-      padding: 10px 14px;
-      background: linear-gradient(135deg, #ffd700, #ff9800);
-      border-radius: 10px;
-      font-size: 16px;
-      font-weight: 800;
-      color: #5d2e00;
-      text-align: center;
-      animation: bannerPop 0.4s cubic-bezier(0.22,1,0.36,1) forwards;
-    }
+  /* ── レイアウト ── */
+  .app{display:flex;height:100vh;}
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .sidebar{width:280px;background:#16213e;border-left:1px solid #0f3460;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
 
-    /* ── リズムモード UI ── */
-    .rhythm-panel {
-      margin-top: 16px;
-      padding: 14px 16px;
-      border: 2px solid #9c27b0;
-      border-radius: 10px;
-      background: #f3e5f5;
-      display: none;           /* 非静止型選択時のみ表示 */
-    }
-    .rhythm-panel h4 { margin: 0 0 10px; color: #6a1b9a; font-size: 15px; }
+  /* ── ヘッダー ── */
+  .header{padding:8px 16px;background:#0f3460;display:flex;align-items:center;gap:12px;flex-shrink:0;}
+  .header h1{font-size:15px;font-weight:700;color:#e94560;}
+  .header .tag{font-size:11px;padding:2px 8px;border-radius:10px;background:#e94560;color:#fff;font-weight:600;}
 
-    /* ビート表示エリア */
-    .beat-display {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-top: 12px;
-    }
+  /* ── ビデオエリア ── */
+  .video-area{flex:1;position:relative;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .video-area video{display:none;}
+  .video-area canvas{width:100%;height:100%;object-fit:contain;}
 
-    /* 円形プログレスリング */
-    .beat-ring-wrap {
-      position: relative;
-      width: 80px;
-      height: 80px;
-      flex-shrink: 0;
-    }
-    .beat-ring-wrap svg {
-      position: absolute;
-      top: 0; left: 0;
-      transform: rotate(-90deg);
-    }
-    #beatRingBg { stroke: #e1bee7; }
-    #beatRingFg {
-      stroke: #9c27b0;
-      stroke-linecap: round;
-      transition: stroke 0.05s;
-    }
-    .beat-ring-label {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      font-weight: 900;
-      color: #6a1b9a;
-      pointer-events: none;
-    }
+  /* ── ビデオオーバーレイ ── */
+  .overlay-label{position:absolute;top:12px;left:12px;font-size:28px;font-weight:900;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,0.8);pointer-events:none;}
+  .overlay-label .kana{font-size:40px;}
+  .overlay-label .sub{font-size:14px;opacity:0.7;display:block;}
+  .overlay-count{position:absolute;top:12px;right:12px;font-size:16px;font-weight:700;color:#4ecca3;text-shadow:0 2px 6px rgba(0,0,0,0.8);text-align:right;pointer-events:none;}
+  .overlay-count .num{font-size:32px;display:block;}
+  .overlay-status{position:absolute;bottom:12px;left:12px;right:12px;font-size:12px;color:#aaa;font-family:monospace;text-shadow:0 1px 4px rgba(0,0,0,0.8);pointer-events:none;}
+  .overlay-type{position:absolute;top:60px;left:12px;font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;pointer-events:none;}
+  .overlay-type.static{background:rgba(33,150,243,0.8);color:#fff;}
+  .overlay-type.motion{background:rgba(76,175,80,0.8);color:#fff;}
 
-    /* ビート履歴ドット */
-    .beat-dots {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-    .beat-dot {
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      background: #e1bee7;
-      transition: background 0.2s, transform 0.15s;
-      flex-shrink: 0;
-    }
-    .beat-dot.fired   { background: #7b1fa2; }
-    .beat-dot.active  { background: #4caf50; transform: scale(1.5); }
-    .beat-dot.mile25  { background: #ff9800; }   /* 25本目（節目） */
-    .beat-dot.mile50  { background: #f44336; }   /* 50本目 */
-    .beat-dot.mile75  { background: #e91e63; }   /* 75本目 */
-    .beat-dot.mile100 { background: #9c27b0; }   /* 100本目 */
-    .beat-dot.mile125 { background: #3f51b5; }   /* 125本目 */
-    .beat-dot.mile150 { background: #ffd700; border: 2px solid #ff8f00; } /* 150本目 */
+  /* カウントダウン */
+  .countdown-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);z-index:10;pointer-events:none;}
+  .countdown-overlay .cd-num{font-size:120px;font-weight:900;color:#e94560;text-shadow:0 0 40px rgba(233,69,96,0.6);animation:cdPulse 1s ease-in-out infinite;}
+  @keyframes cdPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.1);}}
+  .countdown-overlay.hidden{display:none;}
 
-    /* マイルストーン区切り線 */
-    .dot-divider {
-      width: 2px; height: 14px;
-      background: rgba(156,39,176,0.35);
-      border-radius: 2px;
-      flex-shrink: 0;
-    }
+  /* 録画フラッシュ */
+  .rec-flash{position:absolute;inset:0;background:rgba(76,255,170,0.15);pointer-events:none;opacity:0;transition:opacity 0.1s;}
 
-    /* 達成バナー */
-    #rhythmGoalBanner {
-      display: none;
-      margin-top: 10px;
-      padding: 10px 14px;
-      background: linear-gradient(135deg, #ffd700, #ff9800);
-      border-radius: 10px;
-      font-size: 16px;
-      font-weight: 800;
-      color: #5d2e00;
-      text-align: center;
-      animation: bannerPop 0.4s cubic-bezier(0.22,1,0.36,1) forwards;
-    }
-    @keyframes bannerPop {
-      0%  { transform: scale(0.8); opacity: 0; }
-      100%{ transform: scale(1);   opacity: 1; }
-    }
+  /* リズムリングオーバーレイ */
+  .rhythm-ring-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;display:flex;align-items:center;justify-content:center;}
+  .rhythm-ring-overlay.hidden{display:none;}
+  .rhythm-ring-label{position:absolute;font-size:28px;font-weight:900;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,0.6);text-align:center;pointer-events:none;}
 
-    /* 節目フラッシュ（ちょっと派手に） */
-    #rhythmMileFlash {
-      position: absolute;
-      inset: 0;
-      border-radius: 10px;
-      pointer-events: none;
-      opacity: 0;
-      background: rgba(255, 152, 0, 0.35);
-      transition: opacity 0.06s;
-    }
+  /* ── サイドバー：グリッド ── */
+  .grid-header{padding:10px 12px;font-size:13px;font-weight:700;color:#e94560;border-bottom:1px solid #0f3460;flex-shrink:0;}
+  .grid-scroll{flex:1;overflow-y:auto;padding:6px;}
+  .grid-scroll::-webkit-scrollbar{width:4px;}
+  .grid-scroll::-webkit-scrollbar-thumb{background:#0f3460;border-radius:2px;}
 
-    /* キャンバス上のリズムオーバーレイ（フラッシュ） */
-    #rhythmFlash {
-      position: absolute;
-      inset: 0;
-      border-radius: 10px;
-      pointer-events: none;
-      opacity: 0;
-      background: rgba(156, 39, 176, 0.25);
-      transition: opacity 0.08s;
-    }
-    .canvas-wrap { position: relative; display: inline-block; }
-  </style>
+  .grid-row{margin-bottom:4px;}
+  .grid-row-label{font-size:9px;color:#666;padding:0 2px;margin-bottom:1px;}
+  .grid-row-items{display:flex;flex-wrap:wrap;gap:2px;}
+
+  .g-btn{width:30px;height:30px;border:1px solid #0f3460;border-radius:4px;background:#1a1a2e;color:#e0e0e0;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;position:relative;font-weight:600;}
+  .g-btn:hover{background:#0f3460;border-color:#e94560;}
+  .g-btn.active{background:#e94560;color:#fff;border-color:#e94560;box-shadow:0 0 8px rgba(233,69,96,0.4);}
+  .g-btn.done{background:#2a2a3e;color:#555;border-color:#333;}
+  .g-btn.done::after{content:'✓';position:absolute;font-size:7px;bottom:0;right:1px;color:#4ecca3;}
+  .g-btn.motion-type{border-left:2px solid #4caf50;}
+
+  /* ── サイドバー：オプション ── */
+  .opts-toggle{padding:8px 12px;font-size:12px;font-weight:600;color:#aaa;border-top:1px solid #0f3460;cursor:pointer;flex-shrink:0;user-select:none;}
+  .opts-toggle:hover{color:#e94560;}
+  .opts-panel{padding:8px 12px;border-top:1px solid #0f3460;overflow-y:auto;transition:max-height 0.3s;font-size:11px;}
+  .opts-panel.collapsed{max-height:0!important;padding:0 12px;border:none;overflow:hidden;}
+  .opts-panel label{display:block;margin:4px 0;color:#aaa;}
+  .opts-panel input,.opts-panel select{background:#1a1a2e;border:1px solid #0f3460;color:#e0e0e0;padding:3px 6px;border-radius:4px;font-size:11px;width:70px;}
+  .opts-panel select.wide{width:160px;}
+
+  /* ── 下部バー ── */
+  .bottom-bar{padding:6px 16px;background:#0f3460;display:flex;align-items:center;gap:12px;flex-shrink:0;font-size:12px;}
+  .bottom-bar button{padding:5px 14px;border:1px solid #e94560;background:transparent;color:#e94560;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.15s;}
+  .bottom-bar button:hover{background:#e94560;color:#fff;}
+  .bottom-bar button:disabled{opacity:0.3;cursor:not-allowed;}
+  .bottom-bar button.primary{background:#e94560;color:#fff;}
+  .bottom-bar button.primary:hover{background:#c73a52;}
+  .bottom-bar .spacer{flex:1;}
+  .bottom-bar .info{color:#888;font-family:monospace;}
+
+  /* 進捗バー */
+  .progress-wrap{position:absolute;bottom:0;left:0;right:0;height:4px;background:rgba(255,255,255,0.1);}
+  .progress-bar{height:100%;background:#4ecca3;transition:width 0.2s;width:0%;}
+</style>
 </head>
-
 <body>
-  <h2>🖐️ 指文字データ収集 統一版（全80クラス時系列）</h2>
-  
-  <div class="info-box">
-    <strong>📌 収集方式：</strong>すべてのクラスを <strong>15フレーム固定の時系列データ</strong> として収集します。<br>
-    <strong>静止型</strong>（あ、い、う...）: ポーズが安定したら自動的に0.5秒録画<br>
-    <strong>非静止型</strong>（の、り、が...）: ボタンを押して0.5秒録画
-  </div>
-
-  <div class="row">
-    <div class="panel" style="min-width:400px;max-width:650px;">
-      <h3>⚙️ 設定</h3>
-      
-      <div style="margin:12px 0;">
-        <label><strong>ラベル選択：</strong></label>
-        <select id="label" style="width:200px;">
-          <optgroup label="🟦 静止型（あ行）">
-            <option value="a">あ (a)</option>
-            <option value="i">い (i)</option>
-            <option value="u">う (u)</option>
-            <option value="e">え (e)</option>
-            <option value="o">お (o)</option>
-          </optgroup>
-          <optgroup label="🟦 静止型（か行）">
-            <option value="ka">か (ka)</option>
-            <option value="ki">き (ki)</option>
-            <option value="ku">く (ku)</option>
-            <option value="ke">け (ke)</option>
-            <option value="ko">こ (ko)</option>
-          </optgroup>
-          <optgroup label="🟦 静止型（さ行）">
-            <option value="sa">さ (sa)</option>
-            <option value="shi">し (shi)</option>
-            <option value="su">す (su)</option>
-            <option value="se">せ (se)</option>
-            <option value="so">そ (so)</option>
-          </optgroup>
-          <optgroup label="🟦 静止型（た行）">
-            <option value="ta">た (ta)</option>
-            <option value="chi">ち (chi)</option>
-            <option value="tsu">つ (tsu)</option>
-            <option value="te">て (te)</option>
-            <option value="to">と (to)</option>
-          </optgroup>
-          <optgroup label="🟦 静止型（な行）">
-            <option value="na">な (na)</option>
-            <option value="ni">に (ni)</option>
-            <option value="nu">ぬ (nu)</option>
-            <option value="ne">ね (ne)</option>
-          </optgroup>
-          <optgroup label="🟦 静止型（は行）">
-            <option value="ha">は (ha)</option>
-            <option value="hi">ひ (hi)</option>
-            <option value="fu">ふ (fu)</option>
-            <option value="he">へ (he)</option>
-            <option value="ho">ほ (ho)</option>
-          </optgroup>
-          <optgroup label="🟦 静止型（ま行）">
-            <option value="ma">ま (ma)</option>
-            <option value="mi">み (mi)</option>
-            <option value="mu">む (mu)</option>
-            <option value="me">め (me)</option>
-            <option value="mo">も (mo)</option>
-          </optgroup>
-          <optgroup label="🟦 静止型（や行）">
-            <option value="ya">や (ya)</option>
-            <option value="yu">ゆ (yu)</option>
-            <option value="yo">よ (yo)</option>
-          </optgroup>
-          <optgroup label="🟦 静止型（ら行）">
-            <option value="ra">ら (ra)</option>
-            <option value="re">れ (re)</option>
-            <option value="ro">ろ (ro)</option>
-            <option value="ru">る (ru)</option>
-          </optgroup>
-          <optgroup label="🟦 静止型（わ行）">
-            <option value="wa">わ (wa)</option>
-          </optgroup>
-          <optgroup label="🟦 静止型（特殊型）">
-            <option value="X">X (x)</option>
-          </optgroup>
-          <optgroup label="🟩 非静止型（動き）">
-            <option value="no">の (no)</option>
-            <option value="ri">り (ri)</option>
-            <option value="wo">を (wo)</option>
-            <option value="n">ん (n)</option>
-            <option value="bar">ー (bar)</option>
-          </optgroup>
-          <optgroup label="🟩 非静止型（濁音：が行）">
-            <option value="ga">が (ga)</option>
-            <option value="gi">ぎ (gi)</option>
-            <option value="gu">ぐ (gu)</option>
-            <option value="ge">げ (ge)</option>
-            <option value="go">ご (go)</option>
-          </optgroup>
-          <optgroup label="🟩 非静止型（濁音：ざ行）">
-            <option value="za">ざ (za)</option>
-            <option value="ji">じ (ji)</option>
-            <option value="zu">ず (zu)</option>
-            <option value="ze">ぜ (ze)</option>
-            <option value="zo">ぞ (zo)</option>
-          </optgroup>
-          <optgroup label="🟩 非静止型（濁音：だ行）">
-            <option value="da">だ (da)</option>
-            <option value="di">ぢ (di)</option>
-            <option value="du">づ (du)</option>
-            <option value="de">で (de)</option>
-            <option value="do">ど (do)</option>
-          </optgroup>
-          <optgroup label="🟩 非静止型（濁音：ば行）">
-            <option value="ba">ば (ba)</option>
-            <option value="bi">び (bi)</option>
-            <option value="bu">ぶ (bu)</option>
-            <option value="be">べ (be)</option>
-            <option value="bo">ぼ (bo)</option>
-          </optgroup>
-          <optgroup label="🟩 非静止型（半濁音：ぱ行）">
-            <option value="pa">ぱ (pa)</option>
-            <option value="pi">ぴ (pi)</option>
-            <option value="pu">ぷ (pu)</option>
-            <option value="pe">ぺ (pe)</option>
-            <option value="po">ぽ (po)</option>
-          </optgroup>
-          <optgroup label="🟩 非静止型（拗音・促音）">
-            <option value="xya">ゃ (xya)</option>
-            <option value="xyu">ゅ (xyu)</option>
-            <option value="xyo">ょ (xyo)</option>
-            <option value="xtsu">っ (xtsu)</option>
-            <option value="xa">ぁ (xa)</option>
-            <option value="xi">ぃ (xi)</option>
-            <option value="xu">ぅ (xu)</option>
-            <option value="xe">ぇ (xe)</option>
-            <option value="xo">ぉ (xo)</option>
-          </optgroup>
-        </select>
-        <span class="badge" id="labelType">静止型</span>
-      </div>
-
-      <div style="margin:12px 0;">
-        <label>表示ミラー：</label>
-        <select id="mirrorView">
-          <option value="on" selected>ON（自撮りモード）</option>
-          <option value="off">OFF</option>
-        </select>
-
-        <label>特徴量もミラー：</label>
-        <select id="mirrorForModel">
-          <option value="on" selected>ON</option>
-          <option value="off">OFF</option>
-        </select>
-
-        <label>右手のみ：</label>
-        <select id="rightOnly">
-          <option value="on" selected>ON</option>
-          <option value="off">OFF</option>
-        </select>
-      </div>
-
-      <div style="margin:12px 0;">
-        <label>手検出閾値：</label>
-        <input id="handTh" type="number" step="0.01" value="0.80" min="0" max="1" style="width:80px;"/>
-
-        <label>録画時間(ms)：</label>
-        <input id="recordMs" type="number" value="500" min="300" max="1000" style="width:80px;"/>
-
-        <label>クールダウン(ms)：</label>
-        <input id="cooldown" type="number" value="300" min="100" max="2000" style="width:80px;"/>
-      </div>
-
-      <div style="margin:12px 0;">
-        <label>静止型：安定フレーム数：</label>
-        <input id="stableFrames" type="number" value="15" min="5" max="30" style="width:80px;"/>
-        <span class="small">（このフレーム数安定したら自動録画）</span>
-      </div>
-
-      <div style="margin:12px 0;">
-        <label>目標収集件数：</label>
-        <input id="goalCount" type="number" value="150" min="10" max="1000" step="10" style="width:90px;"/>
-        <span class="small">（達成時に自動ダウンロード）</span>
-      </div>
-
-      <div style="margin:16px 0;">
-        <button id="btnStart" class="btn-primary">▶️ カメラ開始</button>
-        <button id="btnStop" class="btn-danger" disabled>⏹️ 停止</button>
-        <button id="btnArm" class="btn-success" disabled>🎯 収集ON</button>
-      </div>
-
-      <!-- リズムモードパネル（非静止型時のみ表示） -->
-      <div class="rhythm-panel" id="rhythmPanel">
-        <h4>🎵 リズムモード（非静止型専用）</h4>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-          <label>ビート間隔(ms)：</label>
-          <input id="rhythmInterval" type="number" value="1500" min="800" max="4000" step="100" style="width:90px;"/>
-          <button id="btnRhythm" class="btn-success" disabled>🎵 リズム開始</button>
-          <span class="small" style="color:#6a1b9a;">収集ON中に手を準備してスタート</span>
-        </div>
-
-        <div class="beat-display" id="beatDisplay" style="display:none;">
-          <!-- 円形リング -->
-          <div class="beat-ring-wrap">
-            <svg width="80" height="80" viewBox="0 0 80 80">
-              <circle id="beatRingBg" cx="40" cy="40" r="34" fill="none" stroke-width="7"/>
-              <circle id="beatRingFg" cx="40" cy="40" r="34" fill="none" stroke-width="7"
-                      stroke-dasharray="213.6" stroke-dashoffset="213.6"/>
-            </svg>
-            <div class="beat-ring-label" id="beatRingLabel">●</div>
-          </div>
-
-          <!-- ビート履歴ドット -->
-          <div>
-            <div style="font-size:12px;color:#6a1b9a;margin-bottom:6px;font-weight:600;">収集数</div>
-            <div class="beat-dots" id="beatDots" style="flex-wrap:wrap;max-width:280px;gap:4px;"></div>
-            <div id="rhythmGoalBanner">🎉 目標達成！おつかれさまでした！</div>
-
-          </div>
-        </div>
-      </div>
-
-      <div style="margin:16px 0;">
-        <button id="btnDownload" disabled>💾 JSONLダウンロード</button>
-        <button id="btnClear" disabled>🗑️ データクリア</button>
-      </div>
-
-      <div class="mono" id="status" style="padding:8px;background:#f5f5f5;border-radius:6px;margin:8px 0;min-height:2.8em;white-space:pre;">Status: idle</div>
-      <div class="mono" id="counter" style="padding:8px;background:#e8f5e9;border-radius:6px;">Samples: 0</div>
-
-      <!-- 静止型プログレス（静止型選択時のみ表示） -->
-      <div class="static-panel" id="staticProgress">
-        <h4>📊 収集進捗（静止型）</h4>
-
-        <div class="beat-display" id="staticBeatDisplay">
-          <!-- 円形リング -->
-          <div class="beat-ring-wrap">
-            <svg width="80" height="80" viewBox="0 0 80 80">
-              <circle id="staticRingBg" cx="40" cy="40" r="34" fill="none" stroke-width="7" stroke="#bbdefb"/>
-              <circle id="staticRingFg" cx="40" cy="40" r="34" fill="none" stroke-width="7"
-                      stroke="#2196f3" stroke-dasharray="213.6" stroke-dashoffset="213.6"
-                      stroke-linecap="round" style="transform:rotate(-90deg);transform-origin:center;transition:stroke 0.2s;"/>
-            </svg>
-            <div class="beat-ring-label" id="staticRingLabel" style="color:#1565c0;">0%</div>
-          </div>
-
-          <!-- ドット -->
-          <div>
-            <div style="font-size:12px;color:#1565c0;margin-bottom:6px;font-weight:600;">収集数</div>
-            <div class="beat-dots" id="staticDots" style="flex-wrap:wrap;max-width:280px;gap:4px;"></div>
-            <div id="staticGoalBanner">🎉 目標達成！自動ダウンロード中...</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="small mono" id="lastSaved" style="margin:8px 0;">Last: -</div>
+<div class="app">
+  <!-- メインエリア -->
+  <div class="main">
+    <div class="header">
+      <h1>🖐️ 指文字 Collector</h1>
+      <span class="tag">v2</span>
     </div>
 
-    <div class="panel">
-      <h3>📹 プレビュー</h3>
+    <div class="video-area" id="videoArea">
       <video id="video" playsinline autoplay muted></video>
-      <div class="canvas-wrap">
-        <canvas id="canvas"></canvas>
-        <div id="rhythmFlash"></div>
-        <div id="rhythmMileFlash"></div>
+      <canvas id="canvas"></canvas>
+
+      <!-- オーバーレイ -->
+      <div class="overlay-label" id="olLabel"><span class="kana">あ</span><span class="sub">a ─ 静止型</span></div>
+      <div class="overlay-count" id="olCount"><span class="num">0</span>/ <span id="olGoal">50</span></div>
+      <div class="overlay-type static" id="olType">静止型</div>
+      <div class="overlay-status" id="olStatus">▶️ カメラ開始 で収集スタート</div>
+
+      <!-- カウントダウン -->
+      <div class="countdown-overlay hidden" id="cdOverlay"><div class="cd-num" id="cdNum">3</div></div>
+
+      <!-- 録画フラッシュ -->
+      <div class="rec-flash" id="recFlash"></div>
+
+      <!-- リズムリング（映像上にオーバーレイ） -->
+      <div class="rhythm-ring-overlay hidden" id="rhythmOl">
+        <svg width="160" height="160" viewBox="0 0 160 160">
+          <!-- 背景リング（薄いガイド） -->
+          <circle cx="80" cy="80" r="68" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="10"/>
+          <!-- インターバル（紫） -->
+          <circle id="ringInterval" cx="80" cy="80" r="68" fill="none"
+                  stroke="#bb86fc" stroke-width="10" stroke-linecap="round"
+                  stroke-dasharray="427.3" stroke-dashoffset="427.3"
+                  style="transform:rotate(-90deg);transform-origin:center;transition:stroke-dashoffset 0.05s linear;"/>
+          <!-- 撮影時間（薄緑） -->
+          <circle id="ringRecord" cx="80" cy="80" r="68" fill="none"
+                  stroke="#4ecca3" stroke-width="10" stroke-linecap="round"
+                  stroke-dasharray="427.3" stroke-dashoffset="427.3"
+                  style="transform:rotate(-90deg);transform-origin:center;transition:stroke-dashoffset 0.05s linear;"/>
+        </svg>
+        <div class="rhythm-ring-label" id="ringLabel">●</div>
       </div>
-      <div class="small mono" style="margin-top:8px;" id="debugInfo">Debug: -</div>
+
+      <!-- 進捗バー -->
+      <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+    </div>
+
+    <div class="bottom-bar">
+      <button class="primary" id="btnStart">▶️ カメラ開始</button>
+      <button id="btnStop" disabled>⏹ 停止</button>
+      <button id="btnRhythm" disabled>🎵 リズム</button>
+      <span class="info" id="bottomInfo">Ready</span>
+      <span class="spacer"></span>
+      <button id="btnDownload" disabled>💾 DL</button>
+      <button id="btnClear" disabled>🗑</button>
     </div>
   </div>
 
-  <script type="module">
-    import * as vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs";
-    const { HandLandmarker, FilesetResolver, DrawingUtils } = vision;
+  <!-- サイドバー -->
+  <div class="sidebar">
+    <div class="grid-header">取得対象 ─ 指文字 <span id="gridProgress">0/82</span></div>
+    <div class="grid-scroll" id="gridScroll"></div>
 
-    const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-    const WASM_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm";
+    <div class="opts-toggle" id="optsToggle">⚙ オプション ▾</div>
+    <div class="opts-panel" id="optsPanel" style="max-height:40vh;">
+      <label>カメラ <select id="cameraSelect" class="wide"><option value="">検出中...</option></select></label>
+      <label>目標数 <input id="goalCount" type="number" value="50" min="10" max="1000" step="10"/></label>
+      <label>カウントダウン(秒) <input id="countdownSec" type="number" value="3" min="0" max="10" step="1"/></label>
+      <label>開始前安定(秒) <input id="preStableSec" type="number" value="3" min="0" max="10" step="0.5"/></label>
+      <label>手検出閾値 <input id="handTh" type="number" value="0.80" min="0" max="1" step="0.05"/></label>
+      <label>録画時間(ms) <input id="recordMs" type="number" value="500" min="300" max="1000" step="50"/></label>
+      <label>クールダウン(ms) <input id="cooldown" type="number" value="150" min="50" max="2000" step="50"/></label>
+      <label>安定フレーム数 <input id="stableFrames" type="number" value="8" min="3" max="30"/></label>
+      <label>安定判定閾値 <input id="stableTh" type="number" value="0.025" min="0.01" max="0.1" step="0.005"/></label>
+      <label>リズム間隔(ms) <input id="rhythmInterval" type="number" value="1500" min="800" max="4000" step="100"/></label>
+      <label>表示ミラー <select id="mirrorView"><option value="on" selected>ON</option><option value="off">OFF</option></select></label>
+      <label>特徴量ミラー <select id="mirrorForModel"><option value="on" selected>ON</option><option value="off">OFF</option></select></label>
+      <label>右手のみ <select id="rightOnly"><option value="on" selected>ON</option><option value="off">OFF</option></select></label>
+    </div>
+  </div>
+</div>
 
-    // 静止型と非静止型の分類
-    // ラベルごとのダウンロードファイル名
-    const LABEL_FILENAME = {
-      'a':    '01_notmove_a',
-      'i':    '02_notmove_i',
-      'u':    '03_notmove_u',
-      'e':    '04_notmove_e',
-      'o':    '05_notmove_o',
-      'ka':   '06_notmove_ka',
-      'ki':   '07_notmove_ki',
-      'ku':   '08_notmove_ku',
-      'ke':   '09_notmove_ke',
-      'ko':   '10_notmove_ko',
-      'sa':   '11_notmove_sa',
-      'shi':  '12_notmove_shi',
-      'su':   '13_notmove_su',
-      'se':   '14_notmove_se',
-      'so':   '15_notmove_so',
-      'ta':   '16_notmove_ta',
-      'chi':  '17_notmove_chi',
-      'tsu':  '18_notmove_tsu',
-      'te':   '19_notmove_te',
-      'to':   '20_notmove_to',
-      'na':   '21_notmove_na',
-      'ni':   '22_notmove_ni',
-      'nu':   '23_notmove_nu',
-      'ne':   '24_notmove_ne',
-      'no':   '25_move_no',
-      'ha':   '26_notmove_ha',
-      'hi':   '27_notmove_hi',
-      'fu':   '28_notmove_fu',
-      'he':   '29_notmove_he',
-      'ho':   '30_notmove_ho',
-      'ma':   '31_notmove_ma',
-      'mi':   '32_notmove_mi',
-      'mu':   '33_notmove_mu',
-      'me':   '34_notmove_me',
-      'mo':   '35_notmove_mo',
-      'ya':   '36_notmove_ya',
-      'yu':   '37_notmove_yu',
-      'yo':   '38_notmove_yo',
-      'ra':   '39_notmove_ra',
-      'ri':   '40_move_ri',
-      'ru':   '41_notmove_ru',
-      're':   '42_notmove_re',
-      'ro':   '43_notmove_ro',
-      'wa':   '44_notmove_wa',
-      'wo':   '45_move_wo',
-      'n':    '46_move_n',
-      'bar':  '47_move_bar',
-      'ga':   '48_move_ga',
-      'gi':   '49_move_gi',
-      'gu':   '50_move_gu',
-      'ge':   '51_move_ge',
-      'go':   '52_move_go',
-      'za':   '53_move_za',
-      'ji':   '54_move_ji',
-      'zu':   '55_move_zu',
-      'ze':   '56_move_ze',
-      'zo':   '57_move_zo',
-      'da':   '58_move_da',
-      'di':   '59_move_di',
-      'du':   '60_move_du',
-      'de':   '61_move_de',
-      'do':   '62_move_do',
-      'ba':   '63_move_ba',
-      'bi':   '64_move_bi',
-      'bu':   '65_move_bu',
-      'be':   '66_move_be',
-      'bo':   '67_move_bo',
-      'pa':   '68_move_pa',
-      'pi':   '69_move_pi',
-      'pu':   '70_move_pu',
-      'pe':   '71_move_pe',
-      'po':   '72_move_po',
-      'xya':  '73_move_xya',
-      'xyu':  '74_move_xyu',
-      'xyo':  '75_move_xyo',
-      'xtsu': '76_move_xtsu',
-      'xa':   '77_move_xa',
-      'xi':   '78_move_xi',
-      'xu':   '79_move_xu',
-      'xe':   '80_move_xe',
-    };
+<script type="module">
+import * as vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs";
+const { HandLandmarker, FilesetResolver } = vision;
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const WASM_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm";
 
-    const STATIC_LABELS = new Set([
-      'a','i','u','e','o',
-      'ka','ki','ku','ke','ko',
-      'sa','shi','su','se','so',
-      'ta','chi','tsu','te','to',
-      'na','ni','nu','ne',
-      'ha','hi','fu','he','ho',
-      'ma','mi','mu','me','mo',
-      'ya','yu','yo',
-      'ra','re','ro','ru',
-      'wa','X'
-    ]);
+// ══════════════════════════════════════
+// データ定義
+// ══════════════════════════════════════
+const LABELS = [
+  // [key, display, rowLabel]
+  {key:'a',d:'あ',r:'あ行'},{key:'i',d:'い',r:'あ行'},{key:'u',d:'う',r:'あ行'},{key:'e',d:'え',r:'あ行'},{key:'o',d:'お',r:'あ行'},
+  {key:'ka',d:'か',r:'か行'},{key:'ki',d:'き',r:'か行'},{key:'ku',d:'く',r:'か行'},{key:'ke',d:'け',r:'か行'},{key:'ko',d:'こ',r:'か行'},
+  {key:'sa',d:'さ',r:'さ行'},{key:'shi',d:'し',r:'さ行'},{key:'su',d:'す',r:'さ行'},{key:'se',d:'せ',r:'さ行'},{key:'so',d:'そ',r:'さ行'},
+  {key:'ta',d:'た',r:'た行'},{key:'chi',d:'ち',r:'た行'},{key:'tsu',d:'つ',r:'た行'},{key:'te',d:'て',r:'た行'},{key:'to',d:'と',r:'た行'},
+  {key:'na',d:'な',r:'な行'},{key:'ni',d:'に',r:'な行'},{key:'nu',d:'ぬ',r:'な行'},{key:'ne',d:'ね',r:'な行'},{key:'no',d:'の',r:'な行'},
+  {key:'ha',d:'は',r:'は行'},{key:'hi',d:'ひ',r:'は行'},{key:'fu',d:'ふ',r:'は行'},{key:'he',d:'へ',r:'は行'},{key:'ho',d:'ほ',r:'は行'},
+  {key:'ma',d:'ま',r:'ま行'},{key:'mi',d:'み',r:'ま行'},{key:'mu',d:'む',r:'ま行'},{key:'me',d:'め',r:'ま行'},{key:'mo',d:'も',r:'ま行'},
+  {key:'ya',d:'や',r:'や行'},{key:'yu',d:'ゆ',r:'や行'},{key:'yo',d:'よ',r:'や行'},
+  {key:'ra',d:'ら',r:'ら行'},{key:'ri',d:'り',r:'ら行'},{key:'ru',d:'る',r:'ら行'},{key:'re',d:'れ',r:'ら行'},{key:'ro',d:'ろ',r:'ら行'},
+  {key:'wa',d:'わ',r:'わ行'},{key:'wo',d:'を',r:'わ行'},{key:'n',d:'ん',r:'わ行'},{key:'bar',d:'ー',r:'わ行'},{key:'X',d:'X',r:'わ行'},
+  {key:'ga',d:'が',r:'が行'},{key:'gi',d:'ぎ',r:'が行'},{key:'gu',d:'ぐ',r:'が行'},{key:'ge',d:'げ',r:'が行'},{key:'go',d:'ご',r:'が行'},
+  {key:'za',d:'ざ',r:'ざ行'},{key:'ji',d:'じ',r:'ざ行'},{key:'zu',d:'ず',r:'ざ行'},{key:'ze',d:'ぜ',r:'ざ行'},{key:'zo',d:'ぞ',r:'ざ行'},
+  {key:'da',d:'だ',r:'だ行'},{key:'di',d:'ぢ',r:'だ行'},{key:'du',d:'づ',r:'だ行'},{key:'de',d:'で',r:'だ行'},{key:'do',d:'ど',r:'だ行'},
+  {key:'ba',d:'ば',r:'ば行'},{key:'bi',d:'び',r:'ば行'},{key:'bu',d:'ぶ',r:'ば行'},{key:'be',d:'べ',r:'ば行'},{key:'bo',d:'ぼ',r:'ば行'},
+  {key:'pa',d:'ぱ',r:'ぱ行'},{key:'pi',d:'ぴ',r:'ぱ行'},{key:'pu',d:'ぷ',r:'ぱ行'},{key:'pe',d:'ぺ',r:'ぱ行'},{key:'po',d:'ぽ',r:'ぱ行'},
+  {key:'xya',d:'ゃ',r:'小文字'},{key:'xyu',d:'ゅ',r:'小文字'},{key:'xyo',d:'ょ',r:'小文字'},{key:'xtsu',d:'っ',r:'小文字'},
+  {key:'xa',d:'ぁ',r:'小文字'},{key:'xi',d:'ぃ',r:'小文字'},{key:'xu',d:'ぅ',r:'小文字'},{key:'xe',d:'ぇ',r:'小文字'},{key:'xo',d:'ぉ',r:'小文字'},
+];
 
-    const els = {
-      label: document.getElementById("label"),
-      labelType: document.getElementById("labelType"),
-      mirrorView: document.getElementById("mirrorView"),
-      mirrorForModel: document.getElementById("mirrorForModel"),
-      rightOnly: document.getElementById("rightOnly"),
-      handTh: document.getElementById("handTh"),
-      recordMs: document.getElementById("recordMs"),
-      cooldown: document.getElementById("cooldown"),
-      stableFrames: document.getElementById("stableFrames"),
-      btnStart: document.getElementById("btnStart"),
-      btnStop: document.getElementById("btnStop"),
-      btnArm: document.getElementById("btnArm"),
-      btnDownload: document.getElementById("btnDownload"),
-      btnClear: document.getElementById("btnClear"),
-      status: document.getElementById("status"),
-      counter: document.getElementById("counter"),
-      lastSaved: document.getElementById("lastSaved"),
-      video: document.getElementById("video"),
-      canvas: document.getElementById("canvas"),
-      debugInfo: document.getElementById("debugInfo")
-    };
+const LABEL_FILENAME = {
+  'a':'01_notmove_a','i':'02_notmove_i','u':'03_notmove_u','e':'04_notmove_e','o':'05_notmove_o',
+  'ka':'06_notmove_ka','ki':'07_notmove_ki','ku':'08_notmove_ku','ke':'09_notmove_ke','ko':'10_notmove_ko',
+  'sa':'11_notmove_sa','shi':'12_notmove_shi','su':'13_notmove_su','se':'14_notmove_se','so':'15_notmove_so',
+  'ta':'16_notmove_ta','chi':'17_notmove_chi','tsu':'18_notmove_tsu','te':'19_notmove_te','to':'20_notmove_to',
+  'na':'21_notmove_na','ni':'22_notmove_ni','nu':'23_notmove_nu','ne':'24_notmove_ne','no':'25_move_no',
+  'ha':'26_notmove_ha','hi':'27_notmove_hi','fu':'28_notmove_fu','he':'29_notmove_he','ho':'30_notmove_ho',
+  'ma':'31_notmove_ma','mi':'32_notmove_mi','mu':'33_notmove_mu','me':'34_notmove_me','mo':'35_notmove_mo',
+  'ya':'36_notmove_ya','yu':'37_notmove_yu','yo':'38_notmove_yo',
+  'ra':'39_notmove_ra','ri':'40_move_ri','ru':'41_notmove_ru','re':'42_notmove_re','ro':'43_notmove_ro',
+  'wa':'44_notmove_wa','wo':'45_move_wo','n':'46_move_n','bar':'47_move_bar',
+  'ga':'48_move_ga','gi':'49_move_gi','gu':'50_move_gu','ge':'51_move_ge','go':'52_move_go',
+  'za':'53_move_za','ji':'54_move_ji','zu':'55_move_zu','ze':'56_move_ze','zo':'57_move_zo',
+  'da':'58_move_da','di':'59_move_di','du':'60_move_du','de':'61_move_de','do':'62_move_do',
+  'ba':'63_move_ba','bi':'64_move_bi','bu':'65_move_bu','be':'66_move_be','bo':'67_move_bo',
+  'pa':'68_move_pa','pi':'69_move_pi','pu':'70_move_pu','pe':'71_move_pe','po':'72_move_po',
+  'xya':'73_move_xya','xyu':'74_move_xyu','xyo':'75_move_xyo','xtsu':'76_move_xtsu',
+  'xa':'77_move_xa','xi':'78_move_xi','xu':'79_move_xu','xe':'80_move_xe','xo':'81_move_xo',
+};
 
-    let landmarker = null;
-    let stream = null;
-    let rafId = null;
-    let armed = false;
+const STATIC_LABELS = new Set([
+  'a','i','u','e','o','ka','ki','ku','ke','ko','sa','shi','su','se','so',
+  'ta','chi','tsu','te','to','na','ni','nu','ne','ha','hi','fu','he','ho',
+  'ma','mi','mu','me','mo','ya','yu','yo','ra','re','ro','ru','wa','X'
+]);
 
-    let samples = [];
-    let lastSavedAt = 0;
-    let lastHanded = null;
+// ══════════════════════════════════════
+// 状態
+// ══════════════════════════════════════
+let landmarker = null, stream = null, rafId = null;
+let samples = [], lastSavedAt = 0, lastHanded = null;
+let isRecording = false, recordStartAt = 0, recordFrames = [];
+const targetFps = 30;
+let stableBuffer = [], stableCount = 0;
+let currentLabel = 'a';
+const downloadedLabels = new Set();
 
-    // 録画用バッファ
-    let isRecording = false;
-    let recordStartAt = 0;
-    let recordFrames = [];
-    let targetFps = 30;  // 固定
+// カウントダウン
+let countdownActive = false, countdownEnd = 0, countdownDone = false;
 
-    // 静止型用の安定検出
-    let stableBuffer = [];  // 最近のlandmarksを保存
-    let stableCount = 0;
+// 開始前安定（カウントダウン発動条件）
+let preStableStart = 0; // 安定が始まった時刻（0=未開始）
 
-    // 静止型カウント（現セッション）
-    function getGoal() {
-      return parseInt(document.getElementById('goalCount')?.value) || 150;
+// リズムモード
+let rhythmActive = false, rhythmNextBeat = 0, rhythmFired = 0;
+const RING_CIRC = 213.6;
+
+// 推論間引き
+let lastDetectTime = 0, lastRes = null;
+const DETECT_INTERVAL = 50;
+
+// ══════════════════════════════════════
+// DOM
+// ══════════════════════════════════════
+const $ = id => document.getElementById(id);
+const video = $('video'), canvas = $('canvas');
+const olLabel = $('olLabel'), olCount = $('olCount'), olGoal = $('olGoal');
+const olType = $('olType'), olStatus = $('olStatus');
+const cdOverlay = $('cdOverlay'), cdNum = $('cdNum');
+const recFlash = $('recFlash'), progressBar = $('progressBar');
+const rhythmOl = $('rhythmOl');
+const bottomInfo = $('bottomInfo');
+
+// ══════════════════════════════════════
+// グリッド生成
+// ══════════════════════════════════════
+function buildGrid() {
+  const container = $('gridScroll');
+  container.innerHTML = '';
+  let currentRow = null, currentRowItems = null;
+
+  for (const lb of LABELS) {
+    if (!currentRow || currentRow !== lb.r) {
+      currentRow = lb.r;
+      const rowDiv = document.createElement('div');
+      rowDiv.className = 'grid-row';
+      const rowLabel = document.createElement('div');
+      rowLabel.className = 'grid-row-label';
+      rowLabel.textContent = lb.r;
+      rowDiv.appendChild(rowLabel);
+      currentRowItems = document.createElement('div');
+      currentRowItems.className = 'grid-row-items';
+      rowDiv.appendChild(currentRowItems);
+      container.appendChild(rowDiv);
     }
+    const btn = document.createElement('div');
+    btn.className = 'g-btn';
+    btn.dataset.key = lb.key;
+    btn.textContent = lb.d;
+    if (!STATIC_LABELS.has(lb.key)) btn.classList.add('motion-type');
+    btn.onclick = () => selectLabel(lb.key);
+    currentRowItems.appendChild(btn);
+  }
+}
 
-    // リズムモード
-    let rhythmActive = false;
-    let rhythmNextBeat = 0;
-    let rhythmTotalTarget = 0;
-    let rhythmFired = 0;
-    const RING_CIRC = 213.6; // 2πr (r=34)
+function updateGrid() {
+  document.querySelectorAll('.g-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.key === currentLabel);
+    btn.classList.toggle('done', downloadedLabels.has(btn.dataset.key));
+  });
+  const doneCount = downloadedLabels.size;
+  $('gridProgress').textContent = `${doneCount}/${LABELS.length}`;
+}
 
-    // ラベル変更時の処理
-    els.label.addEventListener('change', () => {
-      const label = els.label.value;
-      const isStatic = STATIC_LABELS.has(label);
-      els.labelType.textContent = isStatic ? '静止型' : '非静止型';
-      els.labelType.style.background = isStatic ? '#e3f2fd' : '#e8f5e9';
-      els.labelType.style.borderColor = isStatic ? '#2196f3' : '#4caf50';
-      
-      // 非静止型の場合は手動録画ボタンを表示
-      document.getElementById('rhythmPanel').style.display = isStatic ? 'none' : 'block';
-      document.getElementById('staticProgress').style.display = isStatic ? 'block' : 'none';
-      if (isStatic) updateStaticDots();
-      if (isStatic && rhythmActive) stopRhythm();
-      setCounter(); // バー表示を更新
-    });
+function selectLabel(key) {
+  if (rhythmActive) stopRhythm();
+  currentLabel = key;
+  samples = [];
+  stableBuffer = [];
+  stableCount = 0;
+  countdownActive = false; countdownDone = false;
+  preStableStart = 0;
+  cdOverlay.classList.add('hidden');
+  updateOverlay();
+  updateGrid();
+  updateBottomBar();
+}
 
-    function setStatus(msg, cls = "") {
-      els.status.textContent = msg;
-      els.status.className = "mono " + cls;
+function getGoal() { return parseInt($('goalCount')?.value) || 50; }
+
+function getLabelInfo(key) {
+  const lb = LABELS.find(l => l.key === key);
+  return lb || {key, d: key, r: '?'};
+}
+
+// ══════════════════════════════════════
+// オーバーレイ更新
+// ══════════════════════════════════════
+function updateOverlay() {
+  const info = getLabelInfo(currentLabel);
+  const isStatic = STATIC_LABELS.has(currentLabel);
+  const goal = getGoal();
+  olLabel.innerHTML = `<span class="kana">${info.d}</span><span class="sub">${info.key} ─ ${isStatic?'静止型':'非静止型'}</span>`;
+  olCount.innerHTML = `<span class="num">${samples.length}</span>/ ${goal}`;
+  olGoal.textContent = goal;
+  olType.textContent = isStatic ? '静止型' : '非静止型';
+  olType.className = 'overlay-type ' + (isStatic ? 'static' : 'motion');
+  progressBar.style.width = Math.min(samples.length / goal * 100, 100) + '%';
+
+  // リズムボタン
+  $('btnRhythm').disabled = isStatic || !landmarker;
+  rhythmOl.classList.toggle('hidden', !rhythmActive);
+}
+
+function updateBottomBar() {
+  $('btnDownload').disabled = samples.length === 0;
+  $('btnClear').disabled = samples.length === 0;
+}
+
+// ══════════════════════════════════════
+// MediaPipe初期化
+// ══════════════════════════════════════
+async function initLandmarker() {
+  olStatus.textContent = 'MediaPipe 初期化中...';
+  const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
+  landmarker = await HandLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: MODEL_URL },
+    runningMode: "VIDEO",
+    numHands: 1
+  });
+  olStatus.textContent = 'MediaPipe 準備完了';
+}
+
+// カメラ列挙
+async function enumerateCameras() {
+  // 一度getUserMediaしないとラベルが取れないブラウザがある
+  try {
+    const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    tmp.getTracks().forEach(t => t.stop());
+  } catch(e) { /* ignore */ }
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const cams = devices.filter(d => d.kind === 'videoinput');
+  const sel = $('cameraSelect');
+  sel.innerHTML = '';
+  if (cams.length === 0) {
+    sel.innerHTML = '<option value="">カメラが見つかりません</option>';
+    return;
+  }
+  cams.forEach((cam, i) => {
+    const opt = document.createElement('option');
+    opt.value = cam.deviceId;
+    opt.textContent = cam.label || `カメラ ${i + 1}`;
+    sel.appendChild(opt);
+  });
+}
+
+async function startCamera() {
+  olStatus.textContent = 'カメラ起動中...';
+  const deviceId = $('cameraSelect').value;
+  const videoConstraints = deviceId
+    ? { deviceId: { exact: deviceId }, width: { ideal: 320 }, height: { ideal: 240 } }
+    : { facingMode: "user", width: { ideal: 320 }, height: { ideal: 240 } };
+  stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+  video.srcObject = stream;
+  await new Promise(r => { video.onloadedmetadata = r; });
+  await video.play();
+  const w = video.videoWidth || 320, h = video.videoHeight || 240;
+  canvas.width = w; canvas.height = h;
+  olStatus.textContent = `カメラ準備完了 (${w}x${h})`;
+
+  // カメラ変更後にリスト再取得（ラベルが確定する）
+  await enumerateCameras();
+  // 使用中のdeviceIdを選択状態にする
+  const activeTrack = stream.getVideoTracks()[0];
+  if (activeTrack) {
+    const settings = activeTrack.getSettings();
+    if (settings.deviceId) $('cameraSelect').value = settings.deviceId;
+  }
+}
+
+function stopAll() {
+  if (rafId) cancelAnimationFrame(rafId); rafId = null;
+  if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
+  video.srcObject = null;
+  if (landmarker) { landmarker.close(); landmarker = null; }
+  isRecording = false; recordFrames = []; stableBuffer = []; stableCount = 0; preStableStart = 0;
+  if (rhythmActive) stopRhythm();
+  countdownActive = false; countdownDone = false; cdOverlay.classList.add('hidden');
+}
+
+// ══════════════════════════════════════
+// 特徴量
+// ══════════════════════════════════════
+function toFeature63(landmarks) {
+  const mirror = $('mirrorForModel').value === "on";
+  const wrist = landmarks[0];
+  const pts = landmarks.map(p => ({
+    x: (mirror ? (1-p.x) : p.x) - (mirror ? (1-wrist.x) : wrist.x),
+    y: p.y - wrist.y, z: p.z - wrist.z
+  }));
+  let maxd = 0;
+  for (const p of pts) { const d = Math.sqrt(p.x*p.x+p.y*p.y+p.z*p.z); if(d>maxd) maxd=d; }
+  const s = maxd > 1e-9 ? 1/maxd : 1;
+  const vec = [];
+  for (const p of pts) vec.push(p.x*s, p.y*s, p.z*s);
+  return vec;
+}
+
+function resampleTo15(frames) {
+  const n = frames.length, target = 15;
+  if (n === target) return frames;
+  if (n < target) { const r = [...frames]; while(r.length<target) r.push(frames[n-1]); return r; }
+  const indices = []; for(let i=0;i<target;i++) indices.push(i*(n-1)/(target-1));
+  return indices.map(idx => {
+    const i0=Math.floor(idx), i1=Math.min(i0+1,n-1), a=idx-i0;
+    return frames[i0].map((v,j) => v*(1-a)+frames[i1][j]*a);
+  });
+}
+
+// ══════════════════════════════════════
+// 描画
+// ══════════════════════════════════════
+function draw(vid, res) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height;
+  ctx.save();
+  if ($('mirrorView').value === "on") { ctx.translate(w,0); ctx.scale(-1,1); }
+  ctx.clearRect(0,0,w,h);
+  ctx.drawImage(vid,0,0,w,h);
+  if (res?.landmarks?.length > 0) {
+    for (const lm of res.landmarks) {
+      ctx.strokeStyle = "#4ecca3"; ctx.lineWidth = 2;
+      for (const conn of HandLandmarker.HAND_CONNECTIONS) {
+        ctx.beginPath();
+        ctx.moveTo(lm[conn.start].x*w, lm[conn.start].y*h);
+        ctx.lineTo(lm[conn.end].x*w, lm[conn.end].y*h);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#e94560";
+      for (const p of lm) { ctx.beginPath(); ctx.arc(p.x*w,p.y*h,3,0,Math.PI*2); ctx.fill(); }
     }
+  }
+  ctx.restore();
+  if (isRecording) { recFlash.style.opacity = '1'; } else { recFlash.style.opacity = '0'; }
+}
 
-    function setCounter() {
-      const n = samples.length;
-      els.counter.textContent = `Samples: ${n}`;
-      els.btnDownload.disabled = n === 0;
-      els.btnClear.disabled = n === 0;
+// ══════════════════════════════════════
+// 手検出ヘルパー
+// ══════════════════════════════════════
+function handConfidence(res) { return res?.handednesses?.[0]?.[0]?.score ?? 0; }
+function pickHand(res) {
+  if (!res?.landmarks?.length) return null;
+  let idx = 0;
+  if ($('rightOnly').value==="on" && res.handednesses?.length) {
+    const iR = res.handednesses.findIndex(h => h?.[0]?.categoryName==="Right");
+    if (iR >= 0) idx = iR; else return null;
+  }
+  return { landmarks: res.landmarks[idx], handed: res.handednesses?.[idx]?.[0]?.categoryName ?? "?" };
+}
 
-      // 静止型プログレス更新
-      const label2 = els.label.value;
-      if (STATIC_LABELS.has(label2)) updateStaticDots();
+function isStable(landmarks) {
+  if (stableBuffer.length === 0) return false;
+  const prev = stableBuffer[stableBuffer.length-1];
+  let sum = 0;
+  for (let i=0;i<21;i++) {
+    const dx=landmarks[i].x-prev[i].x, dy=landmarks[i].y-prev[i].y, dz=landmarks[i].z-prev[i].z;
+    sum += Math.sqrt(dx*dx+dy*dy+dz*dz);
+  }
+  return (sum/21) < parseFloat($('stableTh').value);
+}
+
+// ══════════════════════════════════════
+// 録画
+// ══════════════════════════════════════
+function startRecording(ts) { isRecording = true; recordStartAt = ts; recordFrames = []; }
+
+function finishRecording(label) {
+  if (recordFrames.length === 0) { isRecording = false; return; }
+  const frames15 = resampleTo15(recordFrames);
+  samples.push({ label, tsMs: Date.now(), handedness: lastHanded, frames: frames15 });
+  isRecording = false; recordFrames = []; lastSavedAt = performance.now();
+  updateOverlay(); updateBottomBar();
+
+  // 目標達成 → ダウンロード → 次へ
+  if (samples.length >= getGoal()) {
+    downloadJSONL(samples.slice(), label);
+    downloadedLabels.add(label);
+    samples = [];
+    updateOverlay(); updateGrid(); updateBottomBar();
+    advanceToNext();
+  }
+}
+
+function advanceToNext() {
+  const idx = LABELS.findIndex(l => l.key === currentLabel);
+  // 次の未完了ラベルを探す
+  for (let i = 1; i <= LABELS.length; i++) {
+    const next = LABELS[(idx + i) % LABELS.length];
+    if (!downloadedLabels.has(next.key)) {
+      selectLabel(next.key);
+      return;
     }
+  }
+  olStatus.textContent = '🎉 全クラス完了！';
+}
 
-    function saveJSONLLine(obj) {
-      samples.push(obj);
-      setCounter();
+function downloadJSONL(data, lbl) {
+  if (!data) { data = samples.slice(); lbl = currentLabel; }
+  if (data.length === 0) return;
+  const lines = data.map(s => JSON.stringify(s)).join("\n");
+  const blob = new Blob([lines], { type: "application/jsonl" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const ts = new Date().toISOString().slice(0,19).replace(/[:-]/g,"").replace("T","_");
+  const baseName = LABEL_FILENAME[lbl] || `label_${lbl}`;
+  a.href = url; a.download = `${baseName}_${ts}.jsonl`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ══════════════════════════════════════
+// カウントダウン
+// ══════════════════════════════════════
+function startCountdown() {
+  const sec = parseInt($('countdownSec').value) || 3;
+  if (sec <= 0) return false; // カウントダウンなし、即開始
+  countdownActive = true;
+  countdownEnd = performance.now() + sec * 1000;
+  cdOverlay.classList.remove('hidden');
+  cdNum.textContent = sec;
+  return true;
+}
+
+// ══════════════════════════════════════
+// リズムモード
+// ══════════════════════════════════════
+let rhythmPending = false; // カウントダウン中にリズム待機
+
+function startRhythm() {
+  const sec = parseInt($('countdownSec').value) || 3;
+  if (sec > 0 && !countdownDone) {
+    // カウントダウンを先に実行、完了後にリズム開始
+    rhythmPending = true;
+    countdownActive = true;
+    countdownEnd = performance.now() + sec * 1000;
+    cdOverlay.classList.remove('hidden');
+    cdNum.textContent = sec;
+    $('btnRhythm').textContent = '⏹ リズム停止';
+  } else {
+    // カウントダウン不要 or 済み → 即開始
+    actualStartRhythm();
+  }
+}
+
+function actualStartRhythm() {
+  rhythmActive = true; rhythmFired = 0; rhythmPending = false;
+  countdownDone = true;
+  rhythmNextBeat = performance.now() + parseInt($('rhythmInterval').value);
+  rhythmOl.classList.remove('hidden');
+  $('btnRhythm').textContent = '⏹ リズム停止';
+}
+
+function stopRhythm() {
+  rhythmActive = false; rhythmPending = false;
+  rhythmOl.classList.add('hidden');
+  $('btnRhythm').textContent = '🎵 リズム';
+}
+
+// ══════════════════════════════════════
+// メインループ
+// ══════════════════════════════════════
+function loop() {
+  const ts = performance.now();
+  const shouldDetect = isRecording || (ts - lastDetectTime >= DETECT_INTERVAL);
+  let res;
+  if (shouldDetect) {
+    res = landmarker.detectForVideo(video, ts);
+    lastRes = res; lastDetectTime = ts;
+  } else { res = lastRes; }
+  if (shouldDetect) draw(video, res);
+
+  const conf = handConfidence(res);
+  const hasHand = conf >= parseFloat($('handTh').value);
+  const pick = hasHand ? pickHand(res) : null;
+  const label = currentLabel;
+  const isStaticLabel = STATIC_LABELS.has(label);
+  const cd = parseInt($('cooldown').value);
+  const cdOk = (ts - lastSavedAt) >= cd;
+
+  // ── リズムリング更新（常時） ──
+  if (rhythmActive && !isStaticLabel) {
+    const interval = parseInt($('rhythmInterval').value);
+    const recMs = parseInt($('recordMs').value);
+    const CIRC = 427.3; // 2*PI*68
+    const recordRatio = Math.min(recMs / interval, 0.95);
+    const greenLen = recordRatio * CIRC;
+    const purpleLen = (1 - recordRatio) * CIRC;
+
+    // beat直後からの経過時間
+    const beatStart = rhythmNextBeat - interval;
+    const elapsed = Math.max(0, ts - beatStart);
+    const progress = Math.min(elapsed / interval, 1.0);
+
+    const ringInterval = $('ringInterval');
+    const ringRecord = $('ringRecord');
+    const ringLabel = $('ringLabel');
+
+    // 撮影フェーズ: 0 → recordRatio
+    // 待機フェーズ: recordRatio → 1.0
+    if (progress <= recordRatio) {
+      // 撮影中 → 緑リングが埋まっていく
+      const gp = progress / recordRatio; // 0→1
+      ringRecord.setAttribute('stroke-dasharray', `${greenLen} ${CIRC}`);
+      ringRecord.setAttribute('stroke-dashoffset', (greenLen * (1 - gp)).toFixed(1));
+      ringRecord.style.transform = 'rotate(-90deg)';
+      // 紫はまだ非表示
+      ringInterval.setAttribute('stroke-dashoffset', purpleLen.toFixed(1));
+      ringInterval.setAttribute('stroke-dasharray', `${purpleLen} ${CIRC}`);
+      ringInterval.style.transform = `rotate(${-90 + recordRatio * 360}deg)`;
+      ringLabel.textContent = '🔴';
+      ringLabel.style.color = '#4ecca3';
+    } else {
+      // 待機中 → 紫リングが埋まっていく
+      const wp = (progress - recordRatio) / (1 - recordRatio); // 0→1
+      // 緑は満タン
+      ringRecord.setAttribute('stroke-dasharray', `${greenLen} ${CIRC}`);
+      ringRecord.setAttribute('stroke-dashoffset', '0');
+      ringRecord.style.transform = 'rotate(-90deg)';
+      // 紫が進行
+      ringInterval.setAttribute('stroke-dasharray', `${purpleLen} ${CIRC}`);
+      ringInterval.setAttribute('stroke-dashoffset', (purpleLen * (1 - wp)).toFixed(1));
+      ringInterval.style.transform = `rotate(${-90 + recordRatio * 360}deg)`;
+      const remain = Math.max(0, (rhythmNextBeat - ts) / 1000);
+      ringLabel.textContent = remain.toFixed(1);
+      ringLabel.style.color = '#bb86fc';
     }
+  }
 
-    function downloadJSONL(data, labelOverride) {
-      const src = data || samples;
-      const lbl = labelOverride || els.label.value;
-      if (src.length === 0) return;
-
-      const lines = src.map(s => JSON.stringify(s)).join("\n");
-      const blob = new Blob([lines], { type: "application/x-jsonlines" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      const now = new Date();
-      const ts = now.toISOString().slice(0, 19).replace(/[:-]/g, "").replace("T", "_");
-      const baseName = LABEL_FILENAME[lbl] || `label_${lbl}`;
-      a.href = url;
-      a.download = `${baseName}_${ts}.jsonl`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-
-    async function initLandmarker() {
-      setStatus("Initializing MediaPipe...");
-      const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
-      landmarker = await HandLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: MODEL_URL },
-        runningMode: "VIDEO",
-        numHands: 2
-      });
-      setStatus("MediaPipe ready");
-    }
-
-    async function startCamera() {
-      setStatus("Requesting camera...");
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: 640, height: 480 },
-        audio: false
-      });
-      els.video.srcObject = stream;
-      await new Promise(resolve => {
-        els.video.onloadedmetadata = resolve;
-      });
-      await els.video.play();
-      
-      const w = els.video.videoWidth || 640;
-      const h = els.video.videoHeight || 480;
-      els.canvas.width = w;
-      els.canvas.height = h;
-      
-      setStatus("Camera ready");
-    }
-
-    function stopAll() {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = null;
-      
-      if (stream) {
-        stream.getTracks().forEach(t => t.stop());
+  // ── カウントダウン処理 ──
+  if (countdownActive) {
+    const remain = Math.max(0, (countdownEnd - ts) / 1000);
+    if (remain <= 0) {
+      countdownActive = false;
+      countdownDone = true;
+      cdOverlay.classList.add('hidden');
+      // リズム待機中ならリズム開始
+      if (rhythmPending) {
+        actualStartRhythm();
       }
-      stream = null;
-      els.video.srcObject = null;
-      
-      if (landmarker) {
-        landmarker.close();
-        landmarker = null;
-      }
-      
-      armed = false;
-      isRecording = false;
-      recordFrames = [];
-      stableBuffer = [];
-      stableCount = 0;
-    }
-
-    function toFeature63(landmarks) {
-      // wrist基準の正規化（既存と同じ）
-      const mirror = els.mirrorForModel.value === "on";
-      const wrist = landmarks[0];
-      
-      const pts = landmarks.map(p => ({
-        x: (mirror ? (1.0 - p.x) : p.x) - (mirror ? (1.0 - wrist.x) : wrist.x),
-        y: p.y - wrist.y,
-        z: p.z - wrist.z
-      }));
-      
-      let maxd = 0;
-      for (const p of pts) {
-        const d = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-        if (d > maxd) maxd = d;
-      }
-      
-      const s = (maxd > 1e-9) ? (1.0 / maxd) : 1.0;
-      const vec = [];
-      for (const p of pts) {
-        vec.push(p.x * s, p.y * s, p.z * s);
-      }
-      
-      return vec;
-    }
-
-    function draw(video, res) {
-      const ctx = els.canvas.getContext("2d");
-      const w = els.canvas.width;
-      const h = els.canvas.height;
-      
-      ctx.save();
-      
-      if (els.mirrorView.value === "on") {
-        ctx.translate(w, 0);
-        ctx.scale(-1, 1);
-      }
-      
-      ctx.clearRect(0, 0, w, h);
-      ctx.drawImage(video, 0, 0, w, h);
-      
-      if (res?.landmarks?.length > 0) {
-        const drawingUtils = new DrawingUtils(ctx);
-        for (const landmarks of res.landmarks) {
-          drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
-            color: "#00FF00",
-            lineWidth: 2
-          });
-          drawingUtils.drawLandmarks(landmarks, {
-            color: "#FF0000",
-            lineWidth: 1,
-            radius: 3
-          });
-        }
-      }
-      
-      ctx.restore();
-      
-      // 録画中のオーバーレイ
-      if (isRecording) {
-        ctx.fillStyle = "rgba(0, 255, 128, 0.15)";
-        ctx.fillRect(0, 0, w, h);
-      }
-    }
-
-    function handConfidence(res) {
-      if (!res?.handednesses?.length) return 0;
-      return res.handednesses[0]?.[0]?.score ?? 0;
-    }
-
-    function pickHand(res) {
-      if (!res?.landmarks?.length) return null;
-      
-      let idx = 0;
-      if (els.rightOnly.value === "on" && res.handednesses?.length) {
-        const iRight = res.handednesses.findIndex(h => h?.[0]?.categoryName === "Right");
-        if (iRight >= 0) idx = iRight;
-        else return null;
-      }
-      
-      return {
-        landmarks: res.landmarks[idx],
-        handed: res.handednesses?.[idx]?.[0]?.categoryName ?? "?"
-      };
-    }
-
-    function startRecording(tsNow) {
-      isRecording = true;
-      recordStartAt = tsNow;
-      recordFrames = [];
-      setStatus("🔴 Recording...", "ng");
-    }
-
-    function finishRecording(label) {
-      if (recordFrames.length === 0) {
-        setStatus("⚠️ No frames recorded", "ng");
-        isRecording = false;
-        return;
-      }
-      
-      // 15フレームにリサンプリング
-      const frames15 = resampleTo15(recordFrames);
-      
-      const obj = {
-        label: label,
-        tsMs: Date.now(),
-        handedness: lastHanded,
-        frames: frames15
-      };
-      
-      saveJSONLLine(obj);
-      els.lastSaved.textContent = `Last: ${label} (${frames15.length} frames, hand=${lastHanded})`;
-      setStatus(`✅ Saved! label=${label} frames=${frames15.length}`, "ok");
-
-      isRecording = false;
-      recordFrames = [];
-      lastSavedAt = performance.now();
-
-      // ── 150回達成チェック（静止型） ──
-      const isStatic = STATIC_LABELS.has(label);
-      if (isStatic) {
-        const n = samples.length;
-        updateStaticDots();
-
-        // マイルストーン演出（fireMilestone共用）
-        if (getMilestones().includes(n)) {
-          fireStaticMilestone(n, label);
-        }
-      }
-    }
-
-    function resampleTo15(frames) {
-      const n = frames.length;
-      const target = 15;
-      
-      if (n === target) return frames;
-      if (n < target) {
-        // パディング
-        const result = [...frames];
-        while (result.length < target) {
-          result.push(frames[frames.length - 1]);
-        }
-        return result;
-      }
-      
-      // 線形補間
-      const indices = [];
-      for (let i = 0; i < target; i++) {
-        indices.push(i * (n - 1) / (target - 1));
-      }
-      
-      return indices.map(idx => {
-        const i0 = Math.floor(idx);
-        const i1 = Math.min(i0 + 1, n - 1);
-        const alpha = idx - i0;
-        
-        return frames[i0].map((v, j) => v * (1 - alpha) + frames[i1][j] * alpha);
-      });
-    }
-
-    function isStable(landmarks) {
-      // 最新のlandmarksと過去のlandmarksを比較
-      if (stableBuffer.length === 0) return false;
-      
-      const prev = stableBuffer[stableBuffer.length - 1];
-      let sumDist = 0;
-      
-      for (let i = 0; i < 21; i++) {
-        const dx = landmarks[i].x - prev[i].x;
-        const dy = landmarks[i].y - prev[i].y;
-        const dz = landmarks[i].z - prev[i].z;
-        sumDist += Math.sqrt(dx * dx + dy * dy + dz * dz);
-      }
-      
-      const avgDist = sumDist / 21;
-      return avgDist < 0.02;  // 閾値（調整可能）
-    }
-
-    function loop() {
-      const tsNow = performance.now();
-      const res = landmarker.detectForVideo(els.video, tsNow);
-      draw(els.video, res);
-      
-      const conf = handConfidence(res);
-      const hasHand = conf >= Number(els.handTh.value);
-      const pick = hasHand ? pickHand(res) : null;
-      
-      const label = els.label.value;
-      const isStatic = STATIC_LABELS.has(label);
-      const cd = Number(els.cooldown.value);
-      const cdOk = (tsNow - lastSavedAt) >= cd;
-      
-      // Debug info
-      els.debugInfo.textContent = `Hand: ${hasHand ? 'YES' : 'NO'} (conf=${conf.toFixed(2)}) | Buffer: ${recordFrames.length} | Stable: ${stableCount}`;
-      
-      if (!armed) {
-        setStatus("Status: Preview (armed=OFF)", "");
-        rafId = requestAnimationFrame(loop);
-        return;
-      }
-      
-      if (!hasHand || !pick) {
-        stableBuffer = [];
-        stableCount = 0;
-        
-        if (isRecording) {
-          isRecording = false;
-          recordFrames = [];
-          setStatus("⚠️ Recording aborted (no hand)", "ng");
-        } else {
-          setStatus(`Armed=ON | NO HAND (conf=${conf.toFixed(2)})`, "ng");
-        }
-        
-        rafId = requestAnimationFrame(loop);
-        return;
-      }
-      
-      lastHanded = pick.handed;
-      const features = toFeature63(pick.landmarks);
-      
-      // === 静止型の処理 ===
-      if (isStatic) {
-        stableBuffer.push(pick.landmarks);
-        if (stableBuffer.length > 30) stableBuffer.shift();
-        
-        if (isStable(pick.landmarks)) {
-          stableCount++;
-        } else {
-          stableCount = 0;
-        }
-        
-        const requiredStable = Number(els.stableFrames.value);
-        const remain = Math.max(0, requiredStable - stableCount);
-        
-        setStatus(
-          `Armed=ON | Static | label=${label} | conf=${conf.toFixed(2)}\n` +
-          `Stable: ${stableCount}/${requiredStable} (remain ${remain})`,
-          remain === 0 ? "ok" : ""
-        );
-        
-        // 安定したら自動録画開始
-        if (stableCount >= requiredStable && !isRecording && cdOk) {
-          startRecording(tsNow);
-        }
-      }
-      
-      // === リズムモード：非静止型の自動ビートトリガー ===
-      if (rhythmActive && !isStatic && armed && hasHand && !isRecording) {
-        const interval = Number(document.getElementById('rhythmInterval').value);
-        const elapsed = tsNow - rhythmNextBeat + interval;
-        const progress = Math.min(elapsed / interval, 1.0);
-
-        // リング更新
-        const offset = RING_CIRC * (1 - progress);
-        document.getElementById('beatRingFg').setAttribute('stroke-dashoffset', offset.toFixed(1));
-
-        // カウントダウン表示
-        const remain = Math.max(0, Math.ceil((rhythmNextBeat - tsNow) / 1000 * 10) / 10);
-        if (!rhythmActive || rhythmFired === 0) {
-          document.getElementById('beatRingLabel').textContent =
-            remain <= 0.1 ? '🎵' : remain.toFixed(1);
-        } else {
-          // 進捗%を常時表示、ビート直前だけ🎵に
-          const pct = Math.round(rhythmFired / getGoal() * 100);
-          document.getElementById('beatRingLabel').textContent =
-            remain <= 0.1 ? '🎵' : `${pct}%`;
-        }
-
-        // ビート到達 → 録画開始
-        if (tsNow >= rhythmNextBeat) {
-          // フラッシュ演出
-          const flash = document.getElementById('rhythmFlash');
-          flash.style.opacity = '1';
-          setTimeout(() => { flash.style.opacity = '0'; }, 120);
-
-          // リング色を緑に
-          document.getElementById('beatRingFg').style.stroke = '#4caf50';
-          setTimeout(() => {
-            document.getElementById('beatRingFg').style.stroke = '#9c27b0';
-          }, 300);
-
-          startRecording(tsNow);
-          rhythmNextBeat = tsNow + interval;
-
-          // ドット更新
-          rhythmFired++;
-          updateRhythmDots();
-
-          // マイルストーンチェック
-          if (getMilestones().includes(rhythmFired)) {
-            fireMilestone(rhythmFired);
-          }
-
-          // 目標数に達したら停止（150回固定）
-          if (rhythmFired >= getGoal()) {
-            stopRhythm();
-          }
-        }
-      }
-
-      // === 録画中の処理（静止型・非静止型共通） ===
-      if (isRecording) {
-        const frameInterval = 1000 / targetFps;
-        const elapsed = tsNow - recordStartAt;
-        const recordMs = Number(els.recordMs.value);
-        
-        // フレーム追加
-        if (recordFrames.length === 0 || (elapsed >= recordFrames.length * frameInterval)) {
-          recordFrames.push(features);
-        }
-        
-        setStatus(
-          `🔴 Recording... | label=${label}\n` +
-          `Elapsed: ${Math.round(elapsed)}ms / ${recordMs}ms | Frames: ${recordFrames.length}`,
-          ""
-        );
-        
-        // 録画終了
-        if (elapsed >= recordMs) {
-          finishRecording(label);
-          stableCount = 0;
-          stableBuffer = [];
-        }
-      }
-      
+      olStatus.textContent = '収集中...';
+    } else {
+      cdNum.textContent = Math.ceil(remain);
       rafId = requestAnimationFrame(loop);
+      return;
     }
+  }
 
-    // === イベントハンドラ ===
-    
-    els.btnStart.onclick = async () => {
-      els.btnStart.disabled = true;
-      try {
-        await initLandmarker();
-        await startCamera();
-        
-        els.btnStop.disabled = false;
-        els.btnArm.disabled = false;
-        
-        armed = false;
-        isRecording = false;
-        recordFrames = [];
-        stableBuffer = [];
-        stableCount = 0;
-        lastSavedAt = 0;
-        
-        els.btnArm.textContent = "🎯 収集ON";
-        setStatus("Preview (armed=OFF)", "");
-        rafId = requestAnimationFrame(loop);
-      } catch (e) {
-        console.error(e);
-        setStatus("ERROR: " + String(e.message || e), "ng");
-        els.btnStart.disabled = false;
+  // ── 手なし処理 ──
+  if (!hasHand || !pick) {
+    stableBuffer = []; stableCount = 0; preStableStart = 0;
+    if (isRecording && !rhythmActive) {
+      isRecording = false; recordFrames = [];
+    }
+    if (!rhythmActive) {
+      olStatus.textContent = hasHand ? '手を検出中...' : '手を映してください';
+    }
+    // リズムモード：手なしでもビート進行
+    if (rhythmActive && !isStaticLabel && !isRecording) {
+      const interval = parseInt($('rhythmInterval').value);
+      if (ts >= rhythmNextBeat) {
+        rhythmFired++; rhythmNextBeat = ts + interval;
+        olStatus.textContent = `⚠️ Beat ${rhythmFired} skipped (no hand)`;
+        if (rhythmFired >= getGoal()) stopRhythm();
       }
-    };
-
-    els.btnStop.onclick = () => {
-      stopAll();
-      els.btnStart.disabled = false;
-      els.btnStop.disabled = true;
-      els.btnArm.disabled = true;
-      armed = false;
-      els.btnArm.textContent = "🎯 収集ON";
-      setStatus("Stopped", "");
-    };
-
-    // ── リズムモード関数 ────────────────────────────────
-    function startRhythm() {
-      const interval = Number(document.getElementById('rhythmInterval').value);
-      rhythmTotalTarget = Number(document.getElementById('rhythmTargetCount')?.value || 0);
-      rhythmFired = 0;
-      rhythmActive = true;
-      rhythmNextBeat = performance.now() + interval; // 最初のビートは1拍後
-
-      document.getElementById('beatDisplay').style.display = 'flex';
-      document.getElementById('btnRhythm').textContent = '⏹ リズム停止';
-      document.getElementById('btnRhythm').className = 'btn-danger';
-      document.getElementById('beatRingFg').setAttribute('stroke-dashoffset', RING_CIRC.toFixed(1));
-      document.getElementById('rhythmGoalBanner').style.display = 'none';
-      updateRhythmDots();
-      setStatus('🎵 リズムモード開始！ビートに合わせて動かしてください', 'ok');
     }
+    rafId = requestAnimationFrame(loop);
+    return;
+  }
 
-    function stopRhythm() {
-      rhythmActive = false;
-      document.getElementById('btnRhythm').textContent = '🎵 リズム開始';
-      document.getElementById('btnRhythm').className = 'btn-success';
-      document.getElementById('beatRingLabel').textContent = '●';
-      document.getElementById('beatRingFg').setAttribute('stroke-dashoffset', RING_CIRC.toFixed(1));
-      setStatus(`リズムモード停止 (収集: ${rhythmFired}件)`, '');
-    }
+  if (pick) lastHanded = pick.handed;
+  const features = toFeature63(pick.landmarks);
 
-    // マイルストーン定義
-    function getMilestones() {
-      const g = getGoal();
-      return [
-        Math.round(g * 1/6), Math.round(g * 2/6), Math.round(g * 3/6),
-        Math.round(g * 4/6), Math.round(g * 5/6), g
-      ];
-    }
+  // ── 静止型 ──
+  if (isStaticLabel) {
+    stableBuffer.push(pick.landmarks);
+    if (stableBuffer.length > 30) stableBuffer.shift();
+    if (isStable(pick.landmarks)) stableCount++; else stableCount = 0;
 
-    // 静止型ドット更新
-    function updateStaticDots() {
-      const GOAL = getGoal();
-      const n = samples.length;
-      const dotsEl = document.getElementById('staticDots');
-      if (!dotsEl) return;
+    const req = parseInt($('stableFrames').value);
+    const remain = Math.max(0, req - stableCount);
+    const isHandStable = stableCount >= req;
 
-      dotsEl.innerHTML = '';
-      for (let i = 0; i < GOAL; i++) {
-        if (i > 0 && i % 25 === 0) {
-          const div = document.createElement('div');
-          div.className = 'dot-divider';
-          dotsEl.appendChild(div);
+    // 開始前安定トラッキング（カウントダウン前のみ）
+    if (!countdownDone && !countdownActive) {
+      if (isHandStable) {
+        if (preStableStart === 0) preStableStart = ts;
+        const preStableSec = parseFloat($('preStableSec').value) || 3;
+        const preStableElapsed = (ts - preStableStart) / 1000;
+        const preRemain = Math.max(0, preStableSec - preStableElapsed);
+        olStatus.textContent = `手を安定させてください... ${preRemain.toFixed(1)}秒`;
+
+        if (preStableElapsed >= preStableSec) {
+          // 開始前安定クリア → カウントダウン発動
+          const needsCd = startCountdown();
+          if (needsCd) { rafId = requestAnimationFrame(loop); return; }
+          countdownDone = true; // sec=0の場合
         }
-        const d = document.createElement('div');
-        const isFired  = i < n;
-        const isActive = i === n - 1;
-        const num = i + 1;
-        let cls = 'beat-dot';
-        if (isActive) {
-          cls += getMilestones().includes(num) ? ` mile${num}` : ' active';
-        } else if (isFired) {
-          cls += getMilestones().includes(num) ? ` mile${num}` : ' fired';
-        }
-        d.className = cls;
-        dotsEl.appendChild(d);
-      }
-
-      // リング更新
-      const pct = Math.min(n / GOAL * 100, 100);
-      const offset = 213.6 * (1 - pct / 100);
-      const fg = document.getElementById('staticRingFg');
-      if (fg) {
-        fg.setAttribute('stroke-dashoffset', offset.toFixed(1));
-        fg.style.stroke = n >= GOAL ? '#ffd700' : n >= 100 ? '#9c27b0' : n >= 50 ? '#f44336' : '#2196f3';
-      }
-      const lbl = document.getElementById('staticRingLabel');
-      if (lbl) lbl.textContent = Math.round(pct) + '%';
-    }
-    function getMileMsgs() {
-      const g = getGoal();
-      const ms = getMilestones();
-      const colors = [
-        'rgba(255,152,0,0.35)', 'rgba(244,67,54,0.35)', 'rgba(233,30,99,0.35)',
-        'rgba(103,58,183,0.35)', 'rgba(63,81,181,0.35)', 'rgba(255,215,0,0.5)'
-      ];
-      const labels = [
-        `🔥 ${ms[0]}回！調子いいです！`,
-        `⚡ ${ms[1]}回！折り返し地点！`,
-        `💪 ${ms[2]}回！もうひと踏ん張り！`,
-        `🌟 ${ms[3]}回！ラストスパート！`,
-        `🚀 ${ms[4]}回！あと少し！`,
-        `🎉 ${g}回達成！完璧です！`,
-      ];
-      const result = {};
-      ms.forEach((m, i) => { result[m] = [labels[i], colors[i]]; });
-      return result;
-    }
-
-    function updateRhythmDots() {
-      const GOAL = getGoal();
-      const dotsEl = document.getElementById('beatDots');
-      dotsEl.innerHTML = '';
-
-      for (let i = 0; i < GOAL; i++) {
-        // 25本ごとに区切り線（最初以外）
-        if (i > 0 && i % 25 === 0) {
-          const div = document.createElement('div');
-          div.className = 'dot-divider';
-          dotsEl.appendChild(div);
-        }
-
-        const d = document.createElement('div');
-        const isFired  = i < rhythmFired;
-        const isActive = i === rhythmFired - 1;
-        const n = i + 1; // 1始まり
-
-        let cls = 'beat-dot';
-        if (isActive) {
-          // マイルストーンの節目ドット
-          if (getMilestones().includes(n))
-            cls += ` mile${n}`;
-          else
-            cls += ' active';
-        } else if (isFired) {
-          if (getMilestones().includes(n))
-            cls += ` mile${n}`;
-          else
-            cls += ' fired';
-        }
-        d.className = cls;
-        dotsEl.appendChild(d);
-      }
-
-      // プログレステキスト
-      const pct = Math.round(rhythmFired / GOAL * 100);
-      document.getElementById('beatRingLabel').textContent =
-        rhythmActive ? `${pct}%` : '●';
-      document.getElementById('beatRingFg').style.stroke =
-        rhythmFired >= GOAL ? '#ffd700' :
-        rhythmFired >= 100  ? '#9c27b0' :
-        rhythmFired >= 50   ? '#f44336' : '#9c27b0';
-    }
-
-    function fireStaticMilestone(n, label) {
-      const info = getMileMsgs()[n];
-      if (!info) return;
-      const [msg, color] = info;
-
-      // キャンバスフラッシュ
-      const mf = document.getElementById('rhythmMileFlash');
-      if (mf) {
-        mf.style.background = color;
-        mf.style.opacity = '1';
-        setTimeout(() => { mf.style.opacity = '0'; }, 350);
-      }
-
-      setStatus(msg, 'ok');
-
-      if (n === getGoal()) {
-        const banner = document.getElementById('staticGoalBanner');
-        banner.style.display = 'block';
-        banner.textContent = `🎉 ${getGoal()}回達成！自動ダウンロード中...`;
-        setTimeout(() => {
-          downloadJSONL(samples.slice(), label);
-          samples = [];
-          updateStaticDots();
-          setCounter();
-          banner.style.display = 'none';
-          els.lastSaved.textContent = 'Last: - (自動DL完了・データクリア済み)';
-          disarmAfterComplete();
-          setStatus('✅ 自動ダウンロード完了。次のラベルへどうぞ！', 'ok');
-        }, 600);
-      }
-    }
-
-    function disarmAfterComplete() {
-      armed = false;
-      isRecording = false;
-      recordFrames = [];
-      stableBuffer = [];
-      stableCount = 0;
-      els.btnArm.textContent = '🎯 収集ON';
-      document.getElementById('btnRhythm').disabled = true;
-    }
-
-    function fireMilestone(n) {
-      const info = getMileMsgs()[n];
-      if (!info) return;
-      const [msg, color] = info;
-
-      // キャンバスフラッシュ（色違い）
-      const mf = document.getElementById('rhythmMileFlash');
-      if (mf) {
-        mf.style.background = color;
-        mf.style.opacity = '1';
-        setTimeout(() => { mf.style.opacity = '0'; }, 350);
-      }
-
-      // ステータスバーにメッセージ
-      setStatus(msg, 'ok');
-
-      // 150回達成：バナー表示 → 自動DL → クリア
-      if (n === getGoal()) {
-        document.getElementById('rhythmGoalBanner').style.display = 'block';
-        document.getElementById('rhythmGoalBanner').textContent = `🎉 ${getGoal()}回達成！自動ダウンロード中...`;
-        stopRhythm();
-
-        const label = els.label.value;
-        setTimeout(() => {
-          downloadJSONL(samples.slice(), label);
-          samples = [];
-          rhythmFired = 0;
-          setCounter();
-          updateRhythmDots();
-          document.getElementById('rhythmGoalBanner').style.display = 'none';
-          els.lastSaved.textContent = 'Last: - (自動DL完了・データクリア済み)';
-          disarmAfterComplete();
-          setStatus('✅ 自動ダウンロード完了。次のラベルへどうぞ！', 'ok');
-        }, 600);
-      }
-    }
-
-    document.getElementById('btnRhythm').onclick = () => {
-      if (!armed) {
-        alert('先に「収集ON」をONにしてください。');
-        return;
-      }
-      if (rhythmActive) {
-        stopRhythm();
       } else {
-        startRhythm();
+        // 安定が途切れたらリセット
+        preStableStart = 0;
+        olStatus.textContent = `安定: ${stableCount}/${req}  conf=${conf.toFixed(2)}`;
       }
-    };
-    // ──────────────────────────────────────────────────────
+    } else {
+      // カウントダウン済み → 通常の収集ステータス
+      olStatus.textContent = `安定: ${stableCount}/${req}  conf=${conf.toFixed(2)}`;
 
-    els.btnArm.onclick = () => {
-      armed = !armed;
-      isRecording = false;
-      recordFrames = [];
-      stableBuffer = [];
-      stableCount = 0;
-
-      if (!armed && rhythmActive) stopRhythm();
-
-      els.btnArm.textContent = armed ? "⏸️ 収集OFF" : "🎯 収集ON";
-      document.getElementById('btnRhythm').disabled = !armed;
-      setStatus(`Preview (armed=${armed ? "ON" : "OFF"})`, "");
-    };
-
-
-
-    els.btnDownload.onclick = () => downloadJSONL();
-    els.btnClear.onclick = () => {
-      if (confirm("全てのデータをクリアしますか？")) {
-        samples = [];
-        setCounter();
-        els.lastSaved.textContent = "Last: -";
-        setStatus("Data cleared", "");
+      if (isHandStable && !isRecording && cdOk) {
+        startRecording(ts);
       }
-    };
+    }
+  }
 
-    setCounter();
+  // ── リズムモード：ビートトリガー ──
+  if (rhythmActive && !isStaticLabel && !isRecording) {
+    const interval = parseInt($('rhythmInterval').value);
+    if (ts >= rhythmNextBeat) {
+      startRecording(ts);
+      rhythmNextBeat = ts + interval;
+      rhythmFired++;
+      olStatus.textContent = `🎵 Beat ${rhythmFired} / ${getGoal()}`;
+      if (rhythmFired >= getGoal()) stopRhythm();
+    }
+  }
 
-    // ページ読み込み時：初期ラベルに合わせてパネル表示を初期化
-    (function initPanels() {
-      const label = els.label.value;
-      const isStatic = STATIC_LABELS.has(label);
-      document.getElementById('staticProgress').style.display = isStatic ? 'block' : 'none';
-      document.getElementById('rhythmPanel').style.display   = isStatic ? 'none'  : 'block';
-      if (isStatic) updateStaticDots();
-    })();
-  </script>
+  // ── 非静止型（リズムなし）── 手動は旧UIにないので省略、リズム推奨
+
+  // ── 録画中 ──
+  if (isRecording) {
+    const fi = 1000 / targetFps;
+    const elapsed = ts - recordStartAt;
+    const recMs = parseInt($('recordMs').value);
+    if (recordFrames.length === 0 || elapsed >= recordFrames.length * fi) {
+      if (features) recordFrames.push(features);
+      else if (recordFrames.length > 0) recordFrames.push(recordFrames[recordFrames.length-1]);
+    }
+    olStatus.textContent = `🔴 録画中... ${Math.round(elapsed)}/${recMs}ms  (${recordFrames.length}f)`;
+    if (elapsed >= recMs) { finishRecording(label); stableCount = 0; stableBuffer = []; }
+  }
+
+  rafId = requestAnimationFrame(loop);
+}
+
+// ══════════════════════════════════════
+// イベント
+// ══════════════════════════════════════
+$('btnStart').onclick = async () => {
+  $('btnStart').disabled = true;
+  try {
+    await initLandmarker(); await startCamera();
+    $('btnStop').disabled = false;
+    $('btnRhythm').disabled = STATIC_LABELS.has(currentLabel);
+    updateOverlay();
+    rafId = requestAnimationFrame(loop);
+  } catch(e) {
+    olStatus.textContent = 'エラー: ' + e.message;
+    $('btnStart').disabled = false;
+  }
+};
+
+$('btnStop').onclick = () => {
+  stopAll();
+  $('btnStart').disabled = false;
+  $('btnStop').disabled = true;
+  $('btnRhythm').disabled = true;
+  olStatus.textContent = '停止しました';
+};
+
+$('btnRhythm').onclick = () => {
+  if (rhythmActive || rhythmPending) {
+    stopRhythm();
+    countdownActive = false;
+    cdOverlay.classList.add('hidden');
+  } else {
+    startRhythm();
+  }
+};
+
+// カメラ選択変更時 → 再起動
+$('cameraSelect').onchange = async () => {
+  if (!stream) return; // カメラ未起動なら何もしない
+  // 現在のストリーム停止
+  if (rafId) cancelAnimationFrame(rafId); rafId = null;
+  stream.getTracks().forEach(t => t.stop()); stream = null;
+  video.srcObject = null;
+  // 新しいカメラで再起動
+  try {
+    await startCamera();
+    rafId = requestAnimationFrame(loop);
+  } catch(e) {
+    olStatus.textContent = 'カメラ切替エラー: ' + e.message;
+  }
+};
+
+$('btnDownload').onclick = () => {
+  downloadJSONL(samples.slice(), currentLabel);
+  downloadedLabels.add(currentLabel);
+  samples = [];
+  updateOverlay(); updateGrid(); updateBottomBar();
+};
+
+$('btnClear').onclick = () => {
+  if (confirm("現在のデータをクリア？")) {
+    samples = [];
+    updateOverlay(); updateBottomBar();
+  }
+};
+
+$('optsToggle').onclick = () => {
+  $('optsPanel').classList.toggle('collapsed');
+  $('optsToggle').textContent = $('optsPanel').classList.contains('collapsed') ? '⚙ オプション ▸' : '⚙ オプション ▾';
+};
+
+// ── 初期化 ──
+buildGrid();
+selectLabel('a');
+enumerateCameras();
+</script>
 </body>
 </html>
