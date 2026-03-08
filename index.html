@@ -25,13 +25,13 @@
   .video-area canvas{width:100%;height:100%;object-fit:contain;}
 
   /* ── ビデオオーバーレイ ── */
-  .overlay-label{position:absolute;top:12px;left:12px;font-size:28px;font-weight:900;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,0.8);pointer-events:none;}
-  .overlay-label .kana{font-size:40px;}
-  .overlay-label .sub{font-size:14px;opacity:0.7;display:block;}
+  .overlay-label{position:absolute;top:12px;left:12px;font-weight:900;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,0.9),0 0 30px rgba(233,69,96,0.4);pointer-events:none;}
+  .overlay-label .kana{font-size:72px;display:block;line-height:1;}
+  .overlay-label .sub{font-size:14px;opacity:0.7;display:block;margin-top:2px;}
   .overlay-count{position:absolute;top:12px;right:12px;font-size:16px;font-weight:700;color:#4ecca3;text-shadow:0 2px 6px rgba(0,0,0,0.8);text-align:right;pointer-events:none;}
   .overlay-count .num{font-size:32px;display:block;}
   .overlay-status{position:absolute;bottom:12px;left:12px;right:12px;font-size:12px;color:#aaa;font-family:monospace;text-shadow:0 1px 4px rgba(0,0,0,0.8);pointer-events:none;}
-  .overlay-type{position:absolute;top:60px;left:12px;font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;pointer-events:none;}
+  .overlay-type{position:absolute;top:100px;left:12px;font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;pointer-events:none;}
   .overlay-type.static{background:rgba(33,150,243,0.8);color:#fff;}
   .overlay-type.motion{background:rgba(76,175,80,0.8);color:#fff;}
 
@@ -88,6 +88,21 @@
   /* 進捗バー */
   .progress-wrap{position:absolute;bottom:0;left:0;right:0;height:4px;background:rgba(255,255,255,0.1);}
   .progress-bar{height:100%;background:#4ecca3;transition:width 0.2s;width:0%;}
+
+  /* ── モバイル対応 ── */
+  @media (max-width: 768px) {
+    .app{flex-direction:column;height:auto;min-height:100vh;}
+    .sidebar{width:100%;max-height:40vh;border-left:none;border-top:1px solid #0f3460;}
+    .main{min-height:50vh;}
+    .bottom-bar{flex-wrap:wrap;gap:6px;padding:10px 12px;position:sticky;bottom:0;z-index:10;}
+    .bottom-bar button{padding:10px 18px;font-size:14px;flex:none;}
+    .bottom-bar button.primary{flex:1;min-width:120px;}
+    .bottom-bar .spacer{display:none;}
+    .bottom-bar .info{width:100%;text-align:center;order:10;}
+    .overlay-label .kana{font-size:48px;}
+    .overlay-count .num{font-size:24px;}
+    .header h1{font-size:13px;}
+  }
 </style>
 </head>
 <body>
@@ -167,6 +182,9 @@
       <label>安定判定閾値 <input id="stableTh" type="number" value="0.025" min="0.01" max="0.1" step="0.005"/></label>
       <label>静止型ターボ <select id="turboMode"><option value="off">OFF（通常録画）</option><option value="on" selected>ON（即時キャプチャ）</option></select></label>
       <label>リズム間隔(ms) <input id="rhythmInterval" type="number" value="1500" min="800" max="4000" step="100"/></label>
+      <label>リングサイズ <input id="ringSize" type="range" min="80" max="400" value="160" style="width:100px;vertical-align:middle;"/> <span id="ringSizeLabel" class="small" style="font-weight:600;">160px</span></label>
+      <label>リング文字色 <input id="ringFontColor" type="color" value="#ffffff" style="width:40px;height:22px;padding:0;border:1px solid #0f3460;vertical-align:middle;"/></label>
+      <label>リング文字サイズ <input id="ringFontSize" type="range" min="12" max="80" value="28" style="width:80px;vertical-align:middle;"/> <span id="ringFontSizeLabel" class="small" style="font-weight:600;">28px</span></label>
       <label>表示ミラー <select id="mirrorView"><option value="on" selected>ON</option><option value="off">OFF</option></select></label>
       <label>特徴量ミラー <select id="mirrorForModel"><option value="on" selected>ON</option><option value="off">OFF</option></select></label>
       <label>右手のみ <select id="rightOnly"><option value="on" selected>ON</option><option value="off">OFF</option></select></label>
@@ -676,7 +694,7 @@ function loop() {
       ringInterval.setAttribute('stroke-dasharray', `${purpleLen} ${CIRC}`);
       ringInterval.style.transform = `rotate(${-90 + recordRatio * 360}deg)`;
       ringLabel.textContent = '🔴';
-      ringLabel.style.color = '#4ecca3';
+      ringLabel.style.color = $('ringFontColor').value;
     } else {
       // 待機中 → 紫リングが埋まっていく
       const wp = (progress - recordRatio) / (1 - recordRatio); // 0→1
@@ -690,7 +708,7 @@ function loop() {
       ringInterval.style.transform = `rotate(${-90 + recordRatio * 360}deg)`;
       const remain = Math.max(0, (rhythmNextBeat - ts) / 1000);
       ringLabel.textContent = remain.toFixed(1);
-      ringLabel.style.color = '#bb86fc';
+      ringLabel.style.color = $('ringFontColor').value;
     }
   }
 
@@ -727,8 +745,7 @@ function loop() {
       const interval = parseInt($('rhythmInterval').value);
       if (ts >= rhythmNextBeat) {
         rhythmFired++; rhythmNextBeat = ts + interval;
-        olStatus.textContent = `⚠️ Beat ${rhythmFired} skipped (no hand)`;
-        if (rhythmFired >= getGoal()) stopRhythm();
+        olStatus.textContent = `⚠️ Beat ${rhythmFired} skipped (no hand) ─ 取得済: ${samples.length}/${getGoal()}`;
       }
     }
     rafId = requestAnimationFrame(loop);
@@ -800,8 +817,7 @@ function loop() {
       startRecording(ts);
       rhythmNextBeat = ts + interval;
       rhythmFired++;
-      olStatus.textContent = `🎵 Beat ${rhythmFired} / ${getGoal()}`;
-      if (rhythmFired >= getGoal()) stopRhythm();
+      olStatus.textContent = `🎵 Beat ${rhythmFired} ─ 取得済: ${samples.length}/${getGoal()}`;
     }
   }
 
@@ -859,6 +875,24 @@ $('btnRhythm').onclick = () => {
 };
 
 // カメラ選択変更時 → 再起動
+// リングサイズ変更
+$('ringSize').oninput = (e) => {
+  const px = e.target.value;
+  $('ringSizeLabel').textContent = px + 'px';
+  const svg = rhythmOl.querySelector('svg');
+  if (svg) { svg.style.width = px + 'px'; svg.style.height = px + 'px'; }
+};
+// リング文字色変更
+$('ringFontColor').oninput = (e) => {
+  $('ringLabel').style.color = e.target.value;
+};
+// リング文字サイズ変更
+$('ringFontSize').oninput = (e) => {
+  const px = e.target.value;
+  $('ringFontSizeLabel').textContent = px + 'px';
+  $('ringLabel').style.fontSize = px + 'px';
+};
+
 $('cameraSelect').onchange = async () => {
   if (!stream) return; // カメラ未起動なら何もしない
   // 現在のストリーム停止
