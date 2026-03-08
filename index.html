@@ -165,6 +165,7 @@
       <label>クールダウン(ms) <input id="cooldown" type="number" value="150" min="50" max="2000" step="50"/></label>
       <label>安定フレーム数 <input id="stableFrames" type="number" value="8" min="3" max="30"/></label>
       <label>安定判定閾値 <input id="stableTh" type="number" value="0.025" min="0.01" max="0.1" step="0.005"/></label>
+      <label>静止型ターボ <select id="turboMode"><option value="off">OFF（通常録画）</option><option value="on" selected>ON（即時キャプチャ）</option></select></label>
       <label>リズム間隔(ms) <input id="rhythmInterval" type="number" value="1500" min="800" max="4000" step="100"/></label>
       <label>表示ミラー <select id="mirrorView"><option value="on" selected>ON</option><option value="off">OFF</option></select></label>
       <label>特徴量ミラー <select id="mirrorForModel"><option value="on" selected>ON</option><option value="off">OFF</option></select></label>
@@ -237,6 +238,9 @@ let samples = [], lastSavedAt = 0, lastHanded = null;
 let isRecording = false, recordStartAt = 0, recordFrames = [];
 const targetFps = 30;
 let stableBuffer = [], stableCount = 0;
+
+// ターボモード用：安定中の特徴量を蓄積
+let featureRingBuffer = []; // 直近の特徴量を保持（最大30）
 let currentLabel = 'a';
 const downloadedLabels = new Set();
 
@@ -313,6 +317,7 @@ function selectLabel(key) {
   samples = [];
   stableBuffer = [];
   stableCount = 0;
+  featureRingBuffer = [];
   countdownActive = false; countdownDone = false;
   preStableStart = 0;
   cdOverlay.classList.add('hidden');
@@ -418,7 +423,7 @@ function stopAll() {
   if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
   video.srcObject = null;
   if (landmarker) { landmarker.close(); landmarker = null; }
-  isRecording = false; recordFrames = []; stableBuffer = []; stableCount = 0; preStableStart = 0;
+  isRecording = false; recordFrames = []; stableBuffer = []; stableCount = 0; preStableStart = 0; featureRingBuffer = [];
   if (rhythmActive) stopRhythm();
   countdownActive = false; countdownDone = false; cdOverlay.classList.add('hidden');
 }
@@ -508,6 +513,25 @@ function isStable(landmarks) {
 // 録画
 // ══════════════════════════════════════
 function startRecording(ts) { isRecording = true; recordStartAt = ts; recordFrames = []; }
+
+// ターボモード：安定中の特徴量バッファから即時サンプル生成（録画フェーズ不要）
+function turboCaptureStatic(label) {
+  if (featureRingBuffer.length === 0) return;
+  // 直近15フレーム（不足分はresampleTo15がパディング）
+  const recentFeatures = featureRingBuffer.slice(-15);
+  const frames15 = resampleTo15(recentFeatures);
+  samples.push({ label, tsMs: Date.now(), handedness: lastHanded, frames: frames15 });
+  lastSavedAt = performance.now();
+  updateOverlay(); updateBottomBar();
+
+  if (samples.length >= getGoal()) {
+    downloadJSONL(samples.slice(), label);
+    downloadedLabels.add(label);
+    samples = [];
+    updateOverlay(); updateGrid(); updateBottomBar();
+    advanceToNext();
+  }
+}
 
 function finishRecording(label) {
   if (recordFrames.length === 0) { isRecording = false; return; }
@@ -691,7 +715,7 @@ function loop() {
 
   // ── 手なし処理 ──
   if (!hasHand || !pick) {
-    stableBuffer = []; stableCount = 0; preStableStart = 0;
+    stableBuffer = []; stableCount = 0; preStableStart = 0; featureRingBuffer = [];
     if (isRecording && !rhythmActive) {
       isRecording = false; recordFrames = [];
     }
@@ -720,9 +744,14 @@ function loop() {
     if (stableBuffer.length > 30) stableBuffer.shift();
     if (isStable(pick.landmarks)) stableCount++; else stableCount = 0;
 
+    // ターボモード用：特徴量をリングバッファに蓄積
+    featureRingBuffer.push(features);
+    if (featureRingBuffer.length > 30) featureRingBuffer.shift();
+
     const req = parseInt($('stableFrames').value);
     const remain = Math.max(0, req - stableCount);
     const isHandStable = stableCount >= req;
+    const isTurbo = $('turboMode').value === 'on';
 
     // 開始前安定トラッキング（カウントダウン前のみ）
     if (!countdownDone && !countdownActive) {
@@ -744,8 +773,18 @@ function loop() {
         preStableStart = 0;
         olStatus.textContent = `安定: ${stableCount}/${req}  conf=${conf.toFixed(2)}`;
       }
+    } else if (isTurbo) {
+      // ── ターボモード：安定中は即時キャプチャ（録画フェーズなし） ──
+      const turboCd = 50; // ターボ用最小クールダウン(ms)
+      const turboCdOk = (ts - lastSavedAt) >= turboCd;
+      if (isHandStable && turboCdOk) {
+        turboCaptureStatic(label);
+        olStatus.textContent = `⚡ TURBO ${samples.length}/${getGoal()}  conf=${conf.toFixed(2)}`;
+      } else {
+        olStatus.textContent = `安定: ${stableCount}/${req}  conf=${conf.toFixed(2)}`;
+      }
     } else {
-      // カウントダウン済み → 通常の収集ステータス
+      // ── 通常モード：安定→録画→保存 ──
       olStatus.textContent = `安定: ${stableCount}/${req}  conf=${conf.toFixed(2)}`;
 
       if (isHandStable && !isRecording && cdOk) {
