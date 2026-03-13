@@ -89,6 +89,10 @@
   .progress-wrap{position:absolute;bottom:0;left:0;right:0;height:4px;background:rgba(255,255,255,0.1);}
   .progress-bar{height:100%;background:#4ecca3;transition:width 0.2s;width:0%;}
 
+  /* ── コンベアオーバーレイ ── */
+  .conveyor-overlay{position:absolute;inset:0;pointer-events:none;z-index:5;}
+  .conveyor-overlay.hidden{display:none;}
+
   /* ── モバイル対応 ── */
   @media (max-width: 768px) {
     .app{flex-direction:column;height:auto;min-height:100vh;}
@@ -149,6 +153,9 @@
         <div class="rhythm-ring-label" id="ringLabel">●</div>
       </div>
 
+      <!-- コンベアオーバーレイ -->
+      <canvas class="conveyor-overlay hidden" id="conveyorCanvas"></canvas>
+
       <!-- 進捗バー -->
       <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
     </div>
@@ -182,6 +189,7 @@
       <label>安定判定閾値 <input id="stableTh" type="number" value="0.025" min="0.01" max="0.1" step="0.005"/></label>
       <label>静止型ターボ <select id="turboMode"><option value="off">OFF（通常録画）</option><option value="on" selected>ON（即時キャプチャ）</option></select></label>
       <label>リズム間隔(ms) <input id="rhythmInterval" type="number" value="1500" min="800" max="4000" step="100"/></label>
+      <label>非静止モード <select id="motionMode" class="wide"><option value="ring">リズムリング</option><option value="conveyor">コンベア</option></select></label>
       <label>リングサイズ <input id="ringSize" type="range" min="80" max="400" value="160" style="width:100px;vertical-align:middle;"/> <span id="ringSizeLabel" class="small" style="font-weight:600;">160px</span></label>
       <label>リング文字色 <input id="ringFontColor" type="color" value="#ffffff" style="width:40px;height:22px;padding:0;border:1px solid #0f3460;vertical-align:middle;"/></label>
       <label>リング文字サイズ <input id="ringFontSize" type="range" min="12" max="80" value="28" style="width:80px;vertical-align:middle;"/> <span id="ringFontSizeLabel" class="small" style="font-weight:600;">28px</span></label>
@@ -331,6 +339,7 @@ function updateGrid() {
 
 function selectLabel(key) {
   if (rhythmActive) stopRhythm();
+  if (conveyorActive) stopConveyor();
   currentLabel = key;
   samples = [];
   stableBuffer = [];
@@ -365,8 +374,13 @@ function updateOverlay() {
   olType.className = 'overlay-type ' + (isStatic ? 'static' : 'motion');
   progressBar.style.width = Math.min(samples.length / goal * 100, 100) + '%';
 
-  // リズムボタン
-  $('btnRhythm').disabled = isStatic || !landmarker;
+  // リズム/コンベアボタン
+  const isMotionMode = !isStatic && !!landmarker;
+  $('btnRhythm').disabled = !isMotionMode;
+  const mode = $('motionMode').value;
+  if (!rhythmActive && !conveyorActive) {
+    $('btnRhythm').textContent = mode === 'conveyor' ? '🎮 コンベア' : '🎵 リズム';
+  }
   rhythmOl.classList.toggle('hidden', !rhythmActive);
 }
 
@@ -443,6 +457,7 @@ function stopAll() {
   if (landmarker) { landmarker.close(); landmarker = null; }
   isRecording = false; recordFrames = []; stableBuffer = []; stableCount = 0; preStableStart = 0; featureRingBuffer = [];
   if (rhythmActive) stopRhythm();
+  if (conveyorActive) stopConveyor();
   countdownActive = false; countdownDone = false; cdOverlay.classList.add('hidden');
 }
 
@@ -558,8 +573,22 @@ function finishRecording(label) {
   isRecording = false; recordFrames = []; lastSavedAt = performance.now();
   updateOverlay(); updateBottomBar();
 
+  // コンベアモード：ノーツ完了 → 次ノーツ生成
+  if (conveyorActive) {
+    const doneNote = conveyorNotes.find(n => n.judging && !n.done);
+    if (doneNote) {
+      doneNote.done = true;
+      doneNote.judging = false;
+    }
+    // 目標未達なら次のノーツを生成
+    if (samples.length < getGoal()) {
+      spawnConveyorNote();
+    }
+  }
+
   // 目標達成 → ダウンロード → 次へ
   if (samples.length >= getGoal()) {
+    if (conveyorActive) stopConveyor();
     downloadJSONL(samples.slice(), label);
     downloadedLabels.add(label);
     samples = [];
@@ -643,6 +672,197 @@ function stopRhythm() {
 }
 
 // ══════════════════════════════════════
+// コンベアモード
+// ══════════════════════════════════════
+let conveyorActive = false, conveyorPending = false;
+let conveyorNotes = []; // [{x, type, color, symbol, arrived, judging, recProgress}]
+let conveyorSpawned = 0; // 生成済みノーツ数
+
+const conveyorCanvas = $('conveyorCanvas');
+const conveyorCtx = conveyorCanvas.getContext('2d');
+
+// ノーツ種別判定
+const DAKUTEN_LABELS = new Set(['ga','gi','gu','ge','go','za','ji','zu','ze','zo','da','di','du','de','do','ba','bi','bu','be','bo']);
+const HANDAKUTEN_LABELS = new Set(['pa','pi','pu','pe','po']);
+const SMALL_LABELS = new Set(['xya','xyu','xyo','xtsu','xa','xi','xu','xe','xo']);
+const AIRWRITE_LABELS = new Set(['no','ri','wo','n','bar']);
+
+function getMotionType(key) {
+  if (DAKUTEN_LABELS.has(key))    return { type:'dakuten',    color:'#e94560', symbol:'→', desc:'右振り' };
+  if (HANDAKUTEN_LABELS.has(key)) return { type:'handakuten', color:'#2196f3', symbol:'↑', desc:'上振り' };
+  if (SMALL_LABELS.has(key))      return { type:'small',      color:'#4caf50', symbol:'●', desc:'手前引き' };
+  if (AIRWRITE_LABELS.has(key))   return { type:'airwrite',   color:'#bb86fc', symbol:'〜', desc:'空書き' };
+  return { type:'unknown', color:'#888', symbol:'?', desc:'不明' };
+}
+
+function spawnConveyorNote() {
+  const mt = getMotionType(currentLabel);
+  conveyorNotes.push({
+    x: 1.15, // 画面右端の少し外から
+    type: mt.type,
+    color: mt.color,
+    symbol: mt.symbol,
+    desc: mt.desc,
+    arrived: false,
+    judging: false,
+    recProgress: 0,
+    done: false
+  });
+  conveyorSpawned++;
+}
+
+function startConveyor() {
+  const sec = parseInt($('countdownSec').value) || 3;
+  if (sec > 0 && !countdownDone) {
+    conveyorPending = true;
+    countdownActive = true;
+    countdownEnd = performance.now() + sec * 1000;
+    cdOverlay.classList.remove('hidden');
+    cdNum.textContent = sec;
+    $('btnRhythm').textContent = '⏹ コンベア停止';
+  } else {
+    actualStartConveyor();
+  }
+}
+
+function actualStartConveyor() {
+  conveyorActive = true; conveyorPending = false;
+  countdownDone = true;
+  conveyorNotes = [];
+  conveyorSpawned = 0;
+  // canvasサイズをvideo-areaに合わせる
+  const area = $('videoArea');
+  conveyorCanvas.width = area.clientWidth;
+  conveyorCanvas.height = area.clientHeight;
+  conveyorCanvas.classList.remove('hidden');
+  $('btnRhythm').textContent = '⏹ コンベア停止';
+  spawnConveyorNote();
+}
+
+function stopConveyor() {
+  conveyorActive = false; conveyorPending = false;
+  conveyorNotes = [];
+  conveyorCanvas.classList.add('hidden');
+  $('btnRhythm').textContent = '🎵 コンベア';
+}
+
+// コンベア描画
+function drawConveyor(ts, hasHand) {
+  const cw = conveyorCanvas.width, ch = conveyorCanvas.height;
+  // リサイズ追従
+  const area = $('videoArea');
+  if (conveyorCanvas.width !== area.clientWidth || conveyorCanvas.height !== area.clientHeight) {
+    conveyorCanvas.width = area.clientWidth;
+    conveyorCanvas.height = area.clientHeight;
+  }
+  const ctx = conveyorCtx;
+  ctx.clearRect(0, 0, cw, ch);
+
+  // トラック（中央やや下）
+  const trackY = ch * 0.72;
+  const trackH = 6;
+  const judgeX = cw * 0.18;
+  const noteR = Math.min(cw, ch) * 0.06;
+
+  // トラック背景
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(0, trackY - trackH/2, cw, trackH);
+
+  // 判定ライン
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(judgeX - 2, trackY - noteR * 1.8, 4, noteR * 3.6);
+
+  // 判定ゾーンラベル
+  ctx.font = `bold ${Math.max(11, cw * 0.02)}px system-ui`;
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.textAlign = 'center';
+  ctx.fillText('▶ JUDGE', judgeX, trackY - noteR * 2);
+
+  // ノーツ速度（1秒で画面幅の25%移動）
+  const speed = 0.25 / 1000; // per ms
+
+  // ノーツ移動・描画
+  for (const note of conveyorNotes) {
+    if (note.done) continue;
+
+    // 到着前：移動
+    if (!note.arrived) {
+      // 前フレームからの差分は使わず、常に一定速度で左に移動
+      // （requestAnimationFrameの間隔に依存しないようts使用）
+      note.x -= speed * 16.7; // ~60fps想定
+      if (note.x * cw <= judgeX) {
+        note.x = judgeX / cw;
+        note.arrived = true;
+      }
+    }
+
+    const px = note.x * cw;
+    const py = trackY;
+
+    // ── ノーツ本体描画 ──
+    // 外円グロー
+    ctx.save();
+    ctx.shadowColor = note.color;
+    ctx.shadowBlur = note.arrived ? 20 : 10;
+
+    // ノーツ円
+    ctx.beginPath();
+    ctx.arc(px, py, noteR, 0, Math.PI * 2);
+    ctx.fillStyle = note.arrived ? note.color : hexAlpha(note.color, 0.7);
+    ctx.fill();
+
+    // 内側の暗い円
+    ctx.beginPath();
+    ctx.arc(px, py, noteR * 0.7, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fill();
+    ctx.restore();
+
+    // シンボル
+    ctx.font = `bold ${noteR * 1.1}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(note.symbol, px, py);
+
+    // 到着＆録画中 → 進捗リング
+    if (note.judging && note.recProgress > 0) {
+      ctx.beginPath();
+      ctx.arc(px, py, noteR + 4, -Math.PI/2, -Math.PI/2 + Math.PI*2*note.recProgress);
+      ctx.strokeStyle = '#4ecca3';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+
+    // 到着待ち → パルスアニメ
+    if (note.arrived && !note.judging) {
+      const pulse = 0.5 + 0.5 * Math.sin(ts / 200);
+      ctx.beginPath();
+      ctx.arc(px, py, noteR + 6, 0, Math.PI * 2);
+      ctx.strokeStyle = hexAlpha(note.color, pulse * 0.6);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  // 次のノーツ予告（キューに2つ目以降を表示）
+  const remaining = getGoal() - samples.length;
+  const queued = remaining - conveyorNotes.filter(n => !n.done).length;
+  if (queued > 0) {
+    ctx.font = `bold ${Math.max(11, cw * 0.018)}px system-ui`;
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.textAlign = 'right';
+    ctx.fillText(`+${queued} 待機中`, cw - 12, trackY - noteR * 1.5);
+  }
+}
+
+function hexAlpha(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// ══════════════════════════════════════
 // メインループ
 // ══════════════════════════════════════
 function loop() {
@@ -723,6 +943,10 @@ function loop() {
       if (rhythmPending) {
         actualStartRhythm();
       }
+      // コンベア待機中ならコンベア開始
+      if (conveyorPending) {
+        actualStartConveyor();
+      }
       olStatus.textContent = '収集中...';
     } else {
       cdNum.textContent = Math.ceil(remain);
@@ -734,10 +958,10 @@ function loop() {
   // ── 手なし処理 ──
   if (!hasHand || !pick) {
     stableBuffer = []; stableCount = 0; preStableStart = 0; featureRingBuffer = [];
-    if (isRecording && !rhythmActive) {
+    if (isRecording && !rhythmActive && !conveyorActive) {
       isRecording = false; recordFrames = [];
     }
-    if (!rhythmActive) {
+    if (!rhythmActive && !conveyorActive) {
       olStatus.textContent = hasHand ? '手を検出中...' : '手を映してください';
     }
     // リズムモード：手なしでもビート進行
@@ -747,6 +971,11 @@ function loop() {
         rhythmFired++; rhythmNextBeat = ts + interval;
         olStatus.textContent = `⚠️ Beat ${rhythmFired} skipped (no hand) ─ 取得済: ${samples.length}/${getGoal()}`;
       }
+    }
+    // コンベアモード：手なしでもノーツ進行＆描画（到着ノーツは待機）
+    if (conveyorActive) {
+      drawConveyor(ts, false);
+      olStatus.textContent = `🎮 手を映してください ─ 取得済: ${samples.length}/${getGoal()}`;
     }
     rafId = requestAnimationFrame(loop);
     return;
@@ -823,6 +1052,24 @@ function loop() {
 
   // ── 非静止型（リズムなし）── 手動は旧UIにないので省略、リズム推奨
 
+  // ── コンベアモード：ジャッジ＆描画 ──
+  if (conveyorActive && !isStaticLabel) {
+    const activeNote = conveyorNotes.find(n => n.arrived && !n.done);
+    if (activeNote && !isRecording && hasHand) {
+      // 到着ノーツに手が来た → 録画開始
+      activeNote.judging = true;
+      startRecording(ts);
+      olStatus.textContent = `🎮 録画中... ─ 取得済: ${samples.length}/${getGoal()}`;
+    }
+    // 録画中のノーツに進捗を反映
+    if (activeNote && isRecording) {
+      const elapsed = ts - recordStartAt;
+      const recMs = parseInt($('recordMs').value);
+      activeNote.recProgress = Math.min(elapsed / recMs, 1.0);
+    }
+    drawConveyor(ts, hasHand);
+  }
+
   // ── 録画中 ──
   if (isRecording) {
     const fi = 1000 / targetFps;
@@ -865,12 +1112,23 @@ $('btnStop').onclick = () => {
 };
 
 $('btnRhythm').onclick = () => {
-  if (rhythmActive || rhythmPending) {
-    stopRhythm();
-    countdownActive = false;
-    cdOverlay.classList.add('hidden');
+  const mode = $('motionMode').value;
+  if (mode === 'conveyor') {
+    if (conveyorActive || conveyorPending) {
+      stopConveyor();
+      countdownActive = false;
+      cdOverlay.classList.add('hidden');
+    } else {
+      startConveyor();
+    }
   } else {
-    startRhythm();
+    if (rhythmActive || rhythmPending) {
+      stopRhythm();
+      countdownActive = false;
+      cdOverlay.classList.add('hidden');
+    } else {
+      startRhythm();
+    }
   }
 };
 
@@ -891,6 +1149,18 @@ $('ringFontSize').oninput = (e) => {
   const px = e.target.value;
   $('ringFontSizeLabel').textContent = px + 'px';
   $('ringLabel').style.fontSize = px + 'px';
+};
+
+// モード切替ハンドラ
+$('motionMode').onchange = () => {
+  // 動作中のモードを停止
+  if (rhythmActive || rhythmPending) stopRhythm();
+  if (conveyorActive || conveyorPending) stopConveyor();
+  countdownActive = false; countdownDone = false;
+  cdOverlay.classList.add('hidden');
+  // ボタンテキスト更新
+  const mode = $('motionMode').value;
+  $('btnRhythm').textContent = mode === 'conveyor' ? '🎮 コンベア' : '🎵 リズム';
 };
 
 $('cameraSelect').onchange = async () => {
